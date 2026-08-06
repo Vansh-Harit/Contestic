@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { MAX_AVATAR_SIZE_BYTES, ALLOWED_AVATAR_TYPES } from '@/lib/constants'
 
@@ -79,7 +80,8 @@ export async function POST(request: Request) {
   const avatarUrl = urlData.publicUrl
 
   // Update the profile
-  const { error: updateError } = await supabase
+  const admin = createAdminClient()
+  const { error: updateError } = await admin
     .from('profiles')
     .update({ avatar_url: avatarUrl })
     .eq('id', user.id)
@@ -127,7 +129,8 @@ export async function DELETE() {
   }
 
   // Clear avatar_url in profile
-  const { error: updateError } = await supabase
+  const admin = createAdminClient()
+  const { error: updateError } = await admin
     .from('profiles')
     .update({ avatar_url: null })
     .eq('id', user.id)

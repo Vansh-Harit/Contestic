@@ -11,7 +11,7 @@
 - **Rate Limiting:** Upstash Redis (sliding window, user-ID keyed, survives cold starts)
 - **Error Tracking:** Sentry (client + server + edge, production-only)
 - **Forms:** react-hook-form + zod + @hookform/resolvers
-- **Deployment:** Vercel (cron configured)
+- **Deployment target:** Netlify (configuration prepared locally; not deployed)
 
 ## Active Database Schemas
 - `profiles` — user identity, razorpay contact/fund IDs, `upi_id`, `role` (TEXT: `user`|`admin`, default `user`)
@@ -42,11 +42,12 @@
 | API: Cron check-expired | ✅ Done |
 | API: Seed (dev only) | ✅ Done |
 | Auth callback route | ✅ Done |
+| Supabase password recovery | 🟡 Implemented locally; custom SMTP and manual verification pending |
 | shadcn/ui components (13) | ✅ Done |
 | Email templates | ✅ Done |
 | Utility functions | ✅ Done |
 | Constants | ✅ Done |
-| Vercel cron config | ✅ Done |
+| Netlify build + fail-closed scheduled cron adapters | 🟡 Implemented locally; deployment verification pending |
 | .env.local template | ✅ Done |
 | UI pages / styling | ✅ Done (Luminous Precision light-mode theme) |
 | Auth UI Logic Wiring | ✅ Done |
@@ -82,4 +83,4 @@
 
 ## Current Deployment Environment
 - **Local:** `npm run dev` → http://localhost:3000
-- **Production:** Vercel (not yet deployed)
+- **Production:** Netlify selected; no production deployment or domain cutover yet

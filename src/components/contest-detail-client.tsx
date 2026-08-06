@@ -2,25 +2,49 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { User } from '@supabase/supabase-js'
 import { formatINR } from '@/lib/utils'
 import type { ContestPhase } from '@/lib/utils'
 import { SubmitDialog } from '@/components/submit-dialog'
 import { CountdownTimer } from '@/components/countdown-timer'
-import { AlertCircle, Lock, ExternalLink, MessageCircle, Clock, Trophy, Share2 } from 'lucide-react'
+import { ContestLifecycle, ContestStatusBadge } from '@/components/contest-lifecycle'
+import { AlertCircle, Lock, ExternalLink, MessageCircle, Clock, Trophy, Share2, Users } from 'lucide-react'
 import AuthModal from '@/components/auth-modal'
 import ChatPanel from '@/components/chat-panel'
 import toast from 'react-hot-toast'
+import type { VisibleContest } from '@/lib/types'
+
+export interface ContestMaterial {
+  id?: string
+  type: 'link' | 'text'
+  label: string
+  content: string
+}
+
+type ContestDetail = VisibleContest & {
+  submissions?: Array<{ count: number }>
+}
 
 interface ContestDetailClientProps {
-  contest: any
+  contest: ContestDetail
   user: User | null
   hasSubmitted: boolean
   hasEntered: boolean
   phase: ContestPhase
   canSeeMaterials: boolean
-  materials: any[]
+  materials: ContestMaterial[]
   initialUnreadCount?: number
+}
+
+const getCategoryImage = (category: string) => {
+  switch (category) {
+    case 'Video Editing': return '/category-video-editing.png'
+    case 'Content Writing': return '/category-content-writing.png'
+    case 'Naming': return '/category-naming.png'
+    case 'Design': return '/category-design.png'
+    default: return '/category-others.png'
+  }
 }
 
 export default function ContestDetailClient({
@@ -31,7 +55,7 @@ export default function ContestDetailClient({
   phase: initialPhase,
   canSeeMaterials,
   materials,
-  initialUnreadCount = 0
+  initialUnreadCount = 0,
 }: ContestDetailClientProps) {
   const router = useRouter()
   const [hasSubmitted, setHasSubmitted] = useState(initialHasSubmitted)
@@ -40,414 +64,278 @@ export default function ContestDetailClient({
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [enterLoading, setEnterLoading] = useState(false)
-  const [withdrawLoading, setWithdrawLoading] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
 
   const isLister = user?.id === contest.lister_id
+  const entryLimit = contest.entry_limit ?? contest.max_entries
+  const entryCount = contest.entry_count ?? 0
+  const availableSlots = Math.max(0, entryLimit - entryCount)
+  const submissionCount = contest.submission_count ?? contest.submissions?.[0]?.count ?? 0
 
   const handleEnterContest = async () => {
     if (!user) {
       setAuthModalOpen(true)
       return
     }
+
     setEnterLoading(true)
     try {
-      const res = await fetch(`/api/contests/${contest.id}/enter`, {
-        method: 'POST',
-      })
+      const res = await fetch(`/api/contests/${contest.id}/enter`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
         toast.error(data.error || 'Failed to enter contest')
       } else {
         setHasEntered(true)
-        toast.success('You have entered the tournament', { position: 'top-center' })
-        toast('You can now ask questions to lister if needed.', {
-          icon: '💬',
+        toast.success('You have entered the contest', { position: 'top-center' })
+        toast('You can now ask the host questions if needed.', {
           duration: 6000,
-          position: 'top-right'
+          position: 'top-right',
         })
         router.refresh()
       }
-    } catch (error) {
+    } catch {
       toast.error('Something went wrong')
     } finally {
       setEnterLoading(false)
     }
   }
 
-  const handleWithdraw = async () => {
-    setWithdrawLoading(true)
-    try {
-      const res = await fetch(`/api/contests/${contest.id}/enter`, {
-        method: 'DELETE',
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'Failed to withdraw')
-      } else {
-        setHasEntered(false)
-        toast.success('Withdrawn from contest')
-        router.refresh()
-      }
-    } catch (error) {
-      toast.error('Something went wrong')
-    } finally {
-      setWithdrawLoading(false)
-    }
-  }
-  
   const handleShare = () => {
     if (navigator.share) {
-      navigator.share({
-        title: contest.title,
-        url: window.location.href,
-      }).catch(console.error);
+      navigator.share({ title: contest.title, url: window.location.href }).catch(console.error)
     } else {
       navigator.clipboard.writeText(window.location.href)
-      toast.success('Link copied to clipboard!')
+      toast.success('Link copied to clipboard')
     }
   }
 
   const renderMaterials = () => (
-    <div className="space-y-4 mt-6">
-      {materials.map((m: any, idx: number) => (
-        <div key={m.id || idx} className="p-5 border border-outline-variant/50 rounded-lg bg-white shadow-sm">
-          {m.type === 'link' ? (
-            <div>
-              <h3 className="font-bold text-on-surface text-body-md mb-2">{m.label}</h3>
+    <div className="mt-6 space-y-3">
+      {materials.map((material, index) => (
+        <div key={material.id || index} className="rounded-xl border border-outline-variant bg-gray-50 p-5">
+          <h3 className="mb-2 font-semibold text-on-surface">{material.label}</h3>
+          {material.type === 'link' ? (
+            <>
               <a
-                href={m.content}
+                href={material.content}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary-container rounded-lg font-bold text-body-sm hover:opacity-90 transition-opacity"
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary-container px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
               >
-                Open <ExternalLink className="h-3.5 w-3.5" />
+                Open material <ExternalLink className="h-4 w-4" aria-hidden="true" />
               </a>
-              <p className="text-[11px] text-secondary mt-2 truncate max-w-md">{m.content}</p>
-            </div>
+              <p className="mt-2 max-w-md truncate text-xs text-secondary">{material.content}</p>
+            </>
           ) : (
-            <div>
-              <h3 className="font-bold text-on-surface text-body-md mb-3">{m.label}</h3>
-              <p className="text-on-surface-variant font-body-md leading-relaxed whitespace-pre-wrap">
-                {m.content}
-              </p>
-            </div>
+            <p className="whitespace-pre-wrap text-sm leading-7 text-on-surface-variant">{material.content}</p>
           )}
         </div>
       ))}
     </div>
   )
 
-  const renderHeroAction = () => {
-    if (isLister) {
-      return (
-        <button disabled className="bg-surface-container text-secondary px-8 py-3 rounded-xl font-bold text-body-lg cursor-not-allowed">
-          You are the lister
-        </button>
-      )
-    }
+  const renderPrimaryAction = () => {
+    const disabledClass = 'min-h-11 rounded-lg border border-outline-variant bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-600'
+    const primaryClass = 'min-h-11 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700'
+
+    if (isLister) return <button disabled className={disabledClass}>You are the host</button>
 
     if (phase === 'entry_open') {
-      if (hasEntered) {
-        return (
-          <div className="flex flex-col items-start gap-2">
-            <button disabled className="bg-green-100 text-green-800 px-8 py-3 rounded-xl font-bold text-body-lg border border-green-200">
-              Entered ✓
-            </button>
-            <button 
-              onClick={handleWithdraw}
-              disabled={withdrawLoading}
-              className="text-body-sm text-secondary hover:text-red-500 hover:underline transition-colors cursor-pointer disabled:opacity-50 ml-2"
-            >
-              {withdrawLoading ? 'Withdrawing...' : 'Withdraw from contest'}
-            </button>
-          </div>
-        )
-      }
+      if (hasEntered) return <button disabled className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700">Entry confirmed</button>
+
       return (
-        <button
-          onClick={handleEnterContest}
-          disabled={enterLoading}
-          className="bg-[#6B46C1] text-white px-8 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 shadow-sm"
-        >
-          {enterLoading ? 'Entering...' : 'Enter Contest ↗'}
-        </button>
+        <div>
+          <button onClick={handleEnterContest} disabled={enterLoading} className={primaryClass}>
+            {enterLoading ? 'Entering…' : 'Enter contest'}
+          </button>
+          <p className="mt-2 max-w-xs text-xs leading-5 text-secondary">Entry is final and cannot be withdrawn.</p>
+        </div>
       )
     }
 
     if (phase === 'submission_open') {
-      if (!hasEntered) {
-        return (
-          <button disabled className="bg-surface-container text-secondary px-8 py-3 rounded-xl font-bold text-body-lg cursor-not-allowed">
-            Entry Period Closed
-          </button>
-        )
-      }
-      if (hasSubmitted) {
-        return (
-          <button disabled className="bg-green-100 text-green-800 px-8 py-3 rounded-xl font-bold text-body-lg border border-green-200">
-            Submitted ✓
-          </button>
-        )
-      }
+      if (!hasEntered) return <button disabled className={disabledClass}>Entry period closed</button>
+      if (hasSubmitted) return <button disabled className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700">Submission received</button>
+
       return (
         <button
-          onClick={() => {
-            if (!user) {
-              setAuthModalOpen(true)
-            } else {
-              setSubmitDialogOpen(true)
-            }
-          }}
-          className="bg-[#6B46C1] text-white px-8 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+          onClick={() => user ? setSubmitDialogOpen(true) : setAuthModalOpen(true)}
+          className={primaryClass}
         >
-          Submit Your Work ↗
+          Submit your work
         </button>
       )
     }
 
-    if (phase === 'judging') {
-      return (
-        <button disabled className="bg-yellow-50 text-yellow-800 px-8 py-3 rounded-xl font-bold text-body-lg border border-yellow-200 cursor-not-allowed">
-          Under Review
-        </button>
-      )
-    }
-
-    return (
-      <button disabled className="bg-surface-container text-secondary px-8 py-3 rounded-xl font-bold text-body-lg cursor-not-allowed">
-        Contest Closed
-      </button>
-    )
+    if (phase === 'judging') return <button disabled className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-5 py-2.5 text-sm font-semibold text-amber-800">Under review</button>
+    return <button disabled className={disabledClass}>Contest closed</button>
   }
 
-  return (
-    <main className="max-w-[1200px] mx-auto w-full px-4 md:px-8 py-8 md:py-12 font-sans">
-      
-      {/* HERO SECTION */}
-      <div className="bg-gradient-to-r from-[#FAFAFF] via-[#F4F1FF] to-[#FCE7F3] rounded-3xl p-8 md:p-12 mb-8 shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-white/60 relative overflow-hidden">
-        
-        <div className="relative z-10 flex flex-col items-start gap-4">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="px-3 py-1 bg-white/60 rounded-full text-[10px] font-bold text-secondary uppercase tracking-widest border border-black/5">
-              {contest.category || 'Contest'}
-            </span>
-            <span className={`px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-sm border
-              ${phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? 'bg-red-50 text-red-600 border-red-100' 
-              : phase === 'judging' ? 'bg-yellow-50 text-yellow-600 border-yellow-100'
-              : 'bg-green-50 text-green-600 border-green-100'}
-            `}>
-              <span className={`w-1.5 h-1.5 rounded-full ${phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? 'bg-red-500' : phase === 'judging' ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
-              {phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? 'Ended' : phase === 'judging' ? 'Judging' : phase === 'entry_open' ? 'Entry Open' : 'Submitting'}
-            </span>
-          </div>
-          
-          <h1 className="text-5xl md:text-[64px] leading-none font-heading font-black text-on-surface tracking-tight">
-            {contest.title}
-          </h1>
-          
-          <p className="text-secondary max-w-xl text-body-md mt-2 mb-4 leading-relaxed">
-            {contest.public_summary || contest.description?.slice(0, 150) + (contest.description?.length > 150 ? '...' : '')}
-          </p>
+  const fullBriefLocked = (!hasEntered && phase !== 'entry_open' && !isLister) || (phase === 'entry_open' && !isLister)
 
-          <div className="flex flex-wrap items-center gap-4 mt-2">
-            {renderHeroAction()}
-            
-            <button 
-              onClick={handleShare}
-              className="bg-white text-on-surface px-6 py-2.5 rounded-full font-bold text-sm shadow-sm border border-outline-variant/40 flex items-center gap-2 cursor-pointer hover:bg-surface-container-lowest transition-colors"
-            >
-              <Share2 className="h-3.5 w-3.5" /> Share
-            </button>
-            
-            <div className="flex items-center gap-1.5 text-secondary text-xs font-medium ml-2">
-              <Clock className="w-3.5 h-3.5" />
-              <span>
-                Deadline: {phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? <span className="text-red-600 font-bold">Ended</span> : <CountdownTimer deadline={contest.deadline} />}
+  return (
+    <main className="mx-auto w-full max-w-7xl px-4 py-8 font-sans md:px-8 md:py-10">
+      <section className="overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-sm">
+        <div className="grid sm:grid-cols-[180px_1fr] lg:grid-cols-[180px_1fr_auto]">
+          <div className="relative hidden min-h-[190px] overflow-hidden bg-indigo-50 sm:block">
+            <img src={getCategoryImage(contest.category)} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          </div>
+
+          <div className="min-w-0 p-6 md:p-8">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                {contest.category}
               </span>
+              <ContestStatusBadge phase={phase} />
+            </div>
+            <h1 className="max-w-3xl font-heading text-3xl font-bold leading-tight text-on-surface md:text-4xl">
+              {contest.title}
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-secondary md:text-base">
+              {contest.public_summary || contest.description || ''}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {renderPrimaryAction()}
+              <button
+                onClick={handleShare}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-outline-variant bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-gray-50"
+              >
+                <Share2 className="h-4 w-4" aria-hidden="true" />
+                Share
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-outline-variant bg-[#F8F7FF] p-6 sm:col-span-2 lg:col-span-1 lg:min-w-[250px] lg:border-l lg:border-t-0 lg:p-8">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-secondary">
+              <Trophy className="h-4 w-4" aria-hidden="true" />
+              Prize
+            </div>
+            <p className="mt-2 text-3xl font-bold text-indigo-700">{formatINR(contest.prize_amount)}</p>
+            <div className="mt-6 border-t border-indigo-100 pt-5">
+              {phase === 'entry_open' ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-start gap-2 text-secondary">
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>Entry closes <span className="font-semibold text-on-surface">{contest.entry_deadline ? <CountdownTimer deadline={contest.entry_deadline} /> : 'soon'}</span></span>
+                  </div>
+                  {hasEntered && (
+                    <div className="flex items-start gap-2 text-secondary">
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>Submission deadline <span className="font-semibold text-on-surface"><CountdownTimer deadline={contest.deadline} /></span></span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-secondary">
+                    <Users className="h-4 w-4" aria-hidden="true" />
+                    <span><span className="font-semibold text-on-surface">{availableSlots}</span> of {entryLimit} slots available</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm text-secondary">
+                  {(phase === 'submission_open' || hasEntered) && (
+                    <div className="flex items-start gap-2">
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>Submission deadline <span className="font-semibold text-on-surface"><CountdownTimer deadline={contest.deadline} /></span></span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4" aria-hidden="true" />
+                    <span><span className="font-semibold text-on-surface">{submissionCount}</span> submissions</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* TWO COLUMN LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        
-        {/* LEFT COLUMN: BRIEFS */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* Public Brief */}
-          <section className="bg-white rounded-2xl p-8 border border-black/10 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="text-[10px] uppercase font-bold text-secondary tracking-widest">
-                Public Brief
-              </div>
-            </div>
-            <h2 className="text-xl font-bold text-on-surface mb-4">Overview</h2>
-            <article className="text-on-surface-variant font-body-sm leading-relaxed whitespace-pre-wrap">
+        <div className="border-t border-outline-variant bg-gray-50 px-6 py-5 md:px-8">
+          <ContestLifecycle phase={phase} />
+        </div>
+      </section>
+
+      <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-secondary">Public brief</p>
+            <h2 className="font-heading text-2xl font-bold text-on-surface">Overview</h2>
+            <article className="mt-4 whitespace-pre-wrap text-sm leading-7 text-on-surface-variant md:text-base">
               {contest.public_summary || contest.description}
             </article>
           </section>
 
-          {/* Full Brief */}
-          <section className="bg-white rounded-2xl p-8 border border-black/10 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="text-[10px] uppercase font-bold text-secondary tracking-widest flex items-center gap-2">
-                <span className="w-6 h-[1px] bg-outline-variant"></span>
-                The Full Brief
-              </div>
-            </div>
-
-            {(!hasEntered && phase !== 'entry_open' && !isLister) || (phase === 'entry_open' && !isLister) ? (
-              <div className="bg-[#F8F7FF] p-10 rounded-2xl flex flex-col items-center justify-center text-center border border-[#EBE7FF] border-dashed mt-4">
-                <div className="w-12 h-12 bg-[#8B5CF6] rounded-xl flex items-center justify-center mb-4 shadow-sm">
-                  <Lock className="h-5 w-5 text-white" />
+          <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
+            <p className="text-xs font-semibold uppercase tracking-wider text-secondary">Full brief and materials</p>
+            {fullBriefLocked ? (
+              <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 px-6 py-10 text-center">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-indigo-600">
+                  <Lock className="h-5 w-5 text-white" aria-hidden="true" />
                 </div>
-                <h3 className="text-sm font-bold text-on-surface mb-1.5">
-                  Unlocks after you enter the contest
-                </h3>
-                <p className="text-xs text-secondary max-w-sm">
-                  Full deliverables, evaluation rubric, and reference material live behind the entry gate.
+                <h3 className="font-semibold text-on-surface">Unlocks after the entry period ends</h3>
+                <p className="mt-2 max-w-md text-sm leading-6 text-secondary">
+                  Only contestants who entered before the cutoff receive the full brief and materials during the submission period.
                 </p>
               </div>
             ) : (
-              <div className="animate-in fade-in duration-500 mt-4">
-                <article className="text-on-surface-variant font-body-md leading-relaxed whitespace-pre-wrap mb-8">
+              <div className="mt-4">
+                <article className="whitespace-pre-wrap text-sm leading-7 text-on-surface-variant md:text-base">
                   {contest.description}
                 </article>
                 {canSeeMaterials && materials.length > 0 && renderMaterials()}
               </div>
             )}
           </section>
+        </div>
 
-          {/* AI Policy */}
-          <section className="bg-[#FAF9F8] rounded-2xl p-5 border border-black/10 shadow-sm flex items-start gap-4">
-            <div className="w-8 h-8 bg-red-50 rounded-full flex items-center justify-center shrink-0 border border-red-100">
-              <AlertCircle className="h-4 w-4 text-red-500" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <h4 className="font-bold text-sm text-on-surface">AI Policy</h4>
-                <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
-                  contest.ai_policy === 'none' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {contest.ai_policy.toUpperCase()}
-                </span>
+        <aside className="space-y-5 lg:sticky lg:top-24">
+          <section className="rounded-2xl border border-outline-variant bg-white p-5 shadow-sm">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-secondary">Hosted by</p>
+            <div className="flex items-center gap-3">
+              {contest.profiles?.avatar_url ? (
+                <img className="h-11 w-11 rounded-full object-cover" src={contest.profiles.avatar_url} alt="" />
+              ) : (
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700">
+                  {contest.profiles?.full_name?.charAt(0).toUpperCase() || 'H'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <Link href={`/profile/${contest.lister_id}`} className="block truncate font-semibold text-on-surface hover:text-primary">
+                  {contest.profiles?.full_name || 'Contest host'}
+                </Link>
+                <p className="text-xs text-secondary">View public profile</p>
               </div>
-              <p className="text-xs text-secondary leading-relaxed max-w-2xl">
+              {!isLister && hasEntered && contest.status !== 'completed' && contest.status !== 'cancelled' && (
+                <button
+                  onClick={() => { setChatOpen(true); setUnreadCount(0) }}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-outline-variant text-secondary transition-colors hover:bg-indigo-50 hover:text-indigo-700"
+                  aria-label="Chat with contest host"
+                >
+                  <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                  {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />}
+                </button>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-outline-variant bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-on-surface">AI policy</h2>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${contest.ai_policy === 'none' ? 'bg-red-50 text-red-700' : contest.ai_policy === 'partial' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
+                {contest.ai_policy === 'none' ? 'Not allowed' : contest.ai_policy === 'partial' ? 'Limited use' : 'Allowed'}
+              </span>
+            </div>
+            <div className="mt-3 flex items-start gap-3 text-sm leading-6 text-secondary">
+              <AlertCircle className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p>
                 {contest.ai_policy === 'none'
-                  ? 'the host is against the use of ai for the contest use of ai might result in disqualification'
-                  : 'AI may be used for brainstorming or outlining, but the final submission must be heavily edited and human-crafted.'}
+                  ? 'Generative AI is not allowed for this contest and may result in disqualification.'
+                  : contest.ai_policy === 'partial'
+                    ? 'AI may support brainstorming or outlining, but the final work must be substantially human-created.'
+                    : 'AI assistance is permitted for this contest.'}
               </p>
             </div>
           </section>
-        </div>
-
-        {/* RIGHT COLUMN: SIDEBAR */}
-        <div className="lg:col-span-1 space-y-6">
-          
-          {/* Prize Pool Card */}
-          <div className="bg-[#7C3AED] rounded-t-2xl rounded-b-md p-6 shadow-sm text-white relative overflow-hidden">
-            <Trophy className="absolute -right-4 -bottom-4 h-32 w-32 text-white opacity-[0.08]" />
-            
-            <div className="flex justify-between items-start mb-1 relative z-10">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-white/90">Prize Pool</span>
-              <Trophy className="h-5 w-5 text-white/80" />
-            </div>
-            <div className="text-[40px] font-black leading-none relative z-10">
-              {formatINR(contest.prize_amount)}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-b-2xl rounded-t-md p-5 border border-black/10 shadow-[0_2px_12px_rgba(0,0,0,0.02)] space-y-4 -mt-4 relative z-0">
-            <div className="flex justify-between items-center text-xs">
-              <div className="flex items-center gap-2 text-secondary">
-                <Clock className="w-3.5 h-3.5" />
-                Deadline
-              </div>
-              <div className="font-bold text-on-surface">
-                {new Date(contest.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </div>
-            </div>
-            <div className="h-[1px] bg-outline-variant/30 w-full" />
-            
-            <div className="flex justify-between items-center text-xs">
-              <div className="flex items-center gap-2 text-secondary">
-                <div className="w-3.5 h-3.5 rounded-full border border-secondary flex items-center justify-center">
-                  <div className="w-1 h-1 bg-secondary rounded-full"></div>
-                </div>
-                Status
-              </div>
-              <div className={`font-bold ${phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? 'text-red-600' : 'text-green-600'}`}>
-                {phase === 'completed' || phase === 'cancelled' || contest.status === 'completed' ? 'Ended' : 'Active'}
-              </div>
-            </div>
-            <div className="h-[1px] bg-outline-variant/30 w-full" />
-
-            <div className="flex justify-between items-center text-xs">
-              <div className="text-secondary pl-5">
-                Entries
-              </div>
-              <div className="font-bold text-on-surface">
-                {contest.submissions?.[0]?.count || 0} submissions
-              </div>
-            </div>
-          </div>
-
-          {/* Listed By Card */}
-          <div className="bg-white rounded-2xl p-5 border border-black/10 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
-            <div className="text-[10px] uppercase font-bold text-secondary tracking-widest mb-3">
-              Listed By
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {contest.profiles?.avatar_url ? (
-                <img
-                  className="w-12 h-12 rounded-xl object-cover"
-                  src={contest.profiles.avatar_url}
-                  alt="Lister Avatar"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center font-bold text-lg">
-                  {contest.profiles?.full_name?.substring(0, 2).toUpperCase() || 'L'}
-                </div>
-              )}
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-sm text-on-surface truncate">
-                    {contest.profiles?.full_name || 'Anonymous Client'}
-                  </h3>
-                  
-                  {/* Chat Notification Ping in Listed By card */}
-                  {!isLister && hasEntered && contest.status !== 'completed' && contest.status !== 'cancelled' && (
-                    <button 
-                      onClick={() => {
-                        setChatOpen(true)
-                        setUnreadCount(0)
-                      }}
-                      className="relative p-1.5 text-secondary hover:text-[#7C3AED] hover:bg-surface-container rounded-full transition-colors cursor-pointer shrink-0"
-                      title="Chat with Lister"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      {unreadCount > 0 && (
-                        <span className="absolute top-0.5 right-0.5 flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500 border border-white"></span>
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-secondary truncate mt-0.5">
-                  Host
-                </p>
-              </div>
-            </div>
-          </div>
-          
-        </div>
+        </aside>
       </div>
 
       <SubmitDialog
@@ -465,13 +353,10 @@ export default function ContestDetailClient({
           contestId={contest.id}
           contestStatus={contest.status}
           recipientId={contest.lister_id}
-          recipientName={contest.profiles?.full_name ?? 'Lister'}
+          recipientName={contest.profiles?.full_name ?? 'Host'}
           currentUserId={user.id}
           currentUserName="You"
-          onClose={() => {
-            setChatOpen(false)
-            setUnreadCount(0) // Mark read when closing chat
-          }}
+          onClose={() => { setChatOpen(false); setUnreadCount(0) }}
         />
       )}
     </main>

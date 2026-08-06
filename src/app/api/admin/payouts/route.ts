@@ -46,7 +46,7 @@ export async function GET() {
     failed: 4,
   }
 
-  const sorted = (data ?? []).sort((a: any, b: any) => {
+  const sorted = (data ?? []).sort((a, b) => {
     const aPriority = statusOrder[a.status] ?? 99
     const bPriority = statusOrder[b.status] ?? 99
     if (aPriority !== bPriority) return aPriority - bPriority

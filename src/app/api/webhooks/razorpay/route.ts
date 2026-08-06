@@ -1,142 +1,239 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendEmail } from '@/lib/resend'
-import { contestLiveEmail } from '@/lib/email-templates'
+import { enqueueAndAttemptEmail } from '@/lib/email-delivery'
+import { verifyRazorpayWebhookSignature } from '@/lib/razorpay-signature'
 import * as Sentry from '@sentry/nextjs'
 
+interface PaymentEntity {
+  id: string
+  order_id: string
+  amount: number
+  currency: string
+}
+
+interface WebhookEvent {
+  event: string
+  payload?: {
+    payment?: {
+      entity?: PaymentEntity
+    }
+    refund?: {
+      entity?: RefundEntity
+    }
+  }
+}
+
+interface RefundEntity {
+  id: string
+  payment_id: string
+  amount: number
+  status: string
+  notes?: { reason?: string }
+}
+
+function paymentFromEvent(event: WebhookEvent): PaymentEntity | null {
+  const payment = event.payload?.payment?.entity
+  if (
+    !payment ||
+    typeof payment.id !== 'string' ||
+    typeof payment.order_id !== 'string' ||
+    typeof payment.amount !== 'number' ||
+    typeof payment.currency !== 'string'
+  ) {
+    return null
+  }
+  return payment
+}
+
+function refundFromEvent(event: WebhookEvent): RefundEntity | null {
+  const refund = event.payload?.refund?.entity
+  if (
+    !refund ||
+    typeof refund.id !== 'string' ||
+    typeof refund.payment_id !== 'string' ||
+    typeof refund.amount !== 'number' ||
+    typeof refund.status !== 'string'
+  ) {
+    return null
+  }
+  return refund
+}
+
 export async function POST(request: Request) {
-  const body = await request.text()
+  const rawBody = await request.text()
   const signature = request.headers.get('x-razorpay-signature')
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET
 
   if (!signature) {
-    console.error('[Webhook] Missing signature header')
     return Response.json({ error: 'Missing signature' }, { status: 400 })
   }
-
-  if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
-    console.error('[Webhook] RAZORPAY_WEBHOOK_SECRET is not configured')
+  if (!webhookSecret) {
+    console.error('[Webhook] Razorpay webhook secret is not configured')
     return Response.json({ error: 'Webhook configuration error' }, { status: 500 })
   }
-
-  const crypto = await import('crypto')
-  const expectedSignature = crypto
-    .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-    .update(body)
-    .digest('hex')
-
-  if (expectedSignature !== signature) {
+  if (!verifyRazorpayWebhookSignature(rawBody, signature, webhookSecret)) {
     Sentry.captureMessage('Razorpay webhook signature mismatch', { level: 'error' })
-    console.error('[Webhook] Signature mismatch')
     return Response.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  const event = JSON.parse(body)
+  let event: WebhookEvent
+  try {
+    event = JSON.parse(rawBody) as WebhookEvent
+  } catch {
+    return Response.json({ error: 'Invalid webhook body' }, { status: 400 })
+  }
+
   const supabase = createAdminClient()
 
   if (event.event === 'payment.captured') {
-    const payment = event.payload.payment.entity
-    const orderId = payment.order_id
-    const paymentId = payment.id
-    const paidAmount = payment.amount  // amount in paise, from Razorpay
+    const payment = paymentFromEvent(event)
+    if (!payment || payment.currency !== 'INR') {
+      return Response.json({ error: 'Invalid payment payload' }, { status: 400 })
+    }
 
-    // IDEMPOTENCY — already processed, return 200 silently
-    const { data: existing } = await supabase
+    const { data: existing, error: paymentLookupError } = await supabase
       .from('payments')
-      .select('id, payment_status, amount')
-      .eq('razorpay_order_id', orderId)
+      .select('id, contest_id, payment_status, amount, razorpay_payment_id')
+      .eq('razorpay_order_id', payment.order_id)
       .single()
 
-    if (existing?.payment_status === 'captured') {
-      console.log('[Webhook] Already processed order:', orderId)
-      return Response.json({ status: 'already_processed' }, { status: 200 })
-    }
-
-    // AMOUNT VERIFICATION — the amount Razorpay captured MUST match
-    // what our own database expected for this order
-    if (!existing) {
-      console.error('[Webhook] No matching payment record for order:', orderId)
-      return Response.json({ status: 'no_matching_record' }, { status: 200 })
-    }
-
-    if (paidAmount !== existing.amount) {
-      console.error(
-        '[Webhook] AMOUNT MISMATCH — possible tampering attempt.',
-        'Order:', orderId,
-        'Expected:', existing.amount,
-        'Received:', paidAmount
-      )
-      Sentry.captureMessage('Razorpay amount mismatch — possible tampering', {
-        level: 'error',
-        extra: { orderId, expected: existing.amount, received: paidAmount },
+    if (paymentLookupError || !existing) {
+      Sentry.captureException(paymentLookupError, {
+        extra: { eventType: event.event },
       })
+      return Response.json({ error: 'Payment record unavailable' }, { status: 500 })
+    }
 
-      // Mark this payment as failed rather than activating the contest
-      await supabase
-        .from('payments')
-        .update({ payment_status: 'failed' })
-        .eq('razorpay_order_id', orderId)
+    if (
+      existing.payment_status === 'captured' &&
+      existing.razorpay_payment_id &&
+      existing.razorpay_payment_id !== payment.id
+    ) {
+      Sentry.captureMessage('Conflicting captured payments for one Razorpay order', {
+        level: 'error',
+      })
+      return Response.json({ status: 'payment_conflict_flagged' }, { status: 200 })
+    }
 
-      // Alert admin via email
-      void sendEmail(
-        process.env.ADMIN_EMAIL ?? '',
-        'SECURITY ALERT — Payment amount mismatch detected',
-        `<p>Order ${orderId} was captured for ₹${paidAmount / 100} but 
-        expected ₹${existing.amount / 100}. Contest was NOT activated. 
-        Investigate immediately.</p>`
-      )
-
+    if (payment.amount !== existing.amount) {
+      if (existing.payment_status !== 'captured') {
+        await supabase
+          .from('payments')
+          .update({ payment_status: 'failed' })
+          .eq('id', existing.id)
+          .in('payment_status', ['pending', 'failed'])
+      }
+      Sentry.captureMessage('Razorpay captured amount mismatch', { level: 'error' })
       return Response.json({ status: 'amount_mismatch_flagged' }, { status: 200 })
     }
 
-    // Fetch contest to get entry_window_hours and deadline
-    const { data: draft, error: fetchError } = await supabase
+    const { data: contest, error: contestLookupError } = await supabase
       .from('contests')
-      .select('id, entry_window_hours, deadline')
-      .eq('razorpay_order_id', orderId)
+      .select('id, lister_id, title, status, deadline, entry_window_hours, razorpay_payment_id')
+      .eq('id', existing.contest_id)
+      .eq('razorpay_order_id', payment.order_id)
       .single()
 
-    if (fetchError || !draft) {
-      Sentry.captureException(fetchError, { extra: { orderId } })
-      console.error('[Webhook] Fetch draft failed:', fetchError)
-      return Response.json({ status: 'db_error' }, { status: 200 })
-    }
-
-    const entryWindow = draft.entry_window_hours || 24
-    const rawEntryDeadline = Date.now() + entryWindow * 60 * 60 * 1000
-    // Clamp: entry_deadline must be before submission deadline (CHECK constraint)
-    const submissionDeadline = new Date(draft.deadline).getTime()
-    const clampedEntryDeadline = Math.min(rawEntryDeadline, submissionDeadline - 60 * 60 * 1000)
-    const entryDeadline = new Date(clampedEntryDeadline).toISOString()
-
-    const { data: contest, error: contestError } = await supabase
-      .from('contests')
-      .update({ 
-        status: 'active', 
-        razorpay_payment_id: paymentId,
-        entry_deadline: entryDeadline
+    if (contestLookupError || !contest) {
+      Sentry.captureException(contestLookupError, {
+        extra: { eventType: event.event },
       })
-      .eq('razorpay_order_id', orderId)
-      .select('id, lister_id, title')
-      .single()
-
-    if (contestError || !contest) {
-      Sentry.captureException(contestError, { extra: { orderId } })
-      console.error('[Webhook] Contest update failed:', contestError)
-      return Response.json({ status: 'db_error' }, { status: 200 })
+      return Response.json({ error: 'Contest record unavailable' }, { status: 500 })
     }
 
-    await supabase.from('payments')
-      .update({ payment_status: 'captured', razorpay_payment_id: paymentId })
-      .eq('razorpay_order_id', orderId)
+    if (!['draft', 'active'].includes(contest.status)) {
+      Sentry.captureMessage('Captured payment received for closed contest', {
+        level: 'error',
+        extra: { contestStatus: contest.status },
+      })
+      return Response.json({ status: 'closed_contest_flagged' }, { status: 200 })
+    }
 
-    await supabase.from('notifications').insert({
-      user_id: contest.lister_id,
-      type: 'contest_live',
-      title: 'Your contest is live!',
-      message: `"${contest.title}" is now accepting submissions.`,
-      contest_id: contest.id
-    })
+    const entryWindow = contest.entry_window_hours || 24
+    const rawEntryDeadline = Date.now() + entryWindow * 60 * 60 * 1000
+    const submissionDeadline = new Date(contest.deadline).getTime()
+    const entryDeadline = new Date(
+      Math.min(rawEntryDeadline, submissionDeadline - 60 * 60 * 1000)
+    ).toISOString()
 
-    // Fire-and-forget email to lister
+    if (contest.status === 'draft') {
+      const { error: contestUpdateError } = await supabase
+        .from('contests')
+        .update({
+          status: 'active',
+          razorpay_payment_id: payment.id,
+          entry_deadline: entryDeadline,
+        })
+        .eq('id', contest.id)
+        .eq('status', 'draft')
+
+      if (contestUpdateError) {
+        Sentry.captureException(contestUpdateError, {
+          extra: { eventType: event.event },
+        })
+        return Response.json({ error: 'Contest activation failed' }, { status: 500 })
+      }
+    } else {
+      if (
+        contest.razorpay_payment_id &&
+        contest.razorpay_payment_id !== payment.id
+      ) {
+        Sentry.captureMessage('Contest has conflicting Razorpay payment identifier', {
+          level: 'error',
+        })
+        return Response.json({ status: 'payment_conflict_flagged' }, { status: 200 })
+      }
+      if (!contest.razorpay_payment_id) {
+        const { error: contestReconcileError } = await supabase
+          .from('contests')
+          .update({ razorpay_payment_id: payment.id })
+          .eq('id', contest.id)
+          .eq('status', 'active')
+
+        if (contestReconcileError) {
+          return Response.json({ error: 'Contest reconciliation failed' }, { status: 500 })
+        }
+      }
+    }
+
+    if (existing.payment_status !== 'captured') {
+      const { error: paymentUpdateError } = await supabase
+        .from('payments')
+        .update({
+          payment_status: 'captured',
+          razorpay_payment_id: payment.id,
+        })
+        .eq('id', existing.id)
+        .in('payment_status', ['pending', 'failed'])
+
+      if (paymentUpdateError) {
+        Sentry.captureException(paymentUpdateError, {
+          extra: { eventType: event.event },
+        })
+        return Response.json({ error: 'Payment reconciliation failed' }, { status: 500 })
+      }
+    }
+
+    const { data: existingNotification } = await supabase
+      .from('notifications')
+      .select('id')
+      .eq('contest_id', contest.id)
+      .eq('type', 'contest_live')
+      .limit(1)
+
+    if (!existingNotification?.length) {
+      const { error: notificationError } = await supabase.from('notifications').insert({
+        user_id: contest.lister_id,
+        type: 'contest_live',
+        title: 'Your contest is live!',
+        message: `"${contest.title}" is now accepting entries.`,
+        contest_id: contest.id,
+      })
+
+      if (notificationError) {
+        console.error('[Webhook] Contest-live notification failed')
+      }
+    }
+
     const { data: lister } = await supabase
       .from('profiles')
       .select('email, full_name')
@@ -144,32 +241,81 @@ export async function POST(request: Request) {
       .single()
 
     if (lister?.email) {
-      void sendEmail(
-        lister.email,
-        `Your contest is live — ${contest.title}`,
-        contestLiveEmail(
-          lister.full_name ?? 'there',
-          contest.title,
-          `${process.env.NEXT_PUBLIC_APP_URL}/contest/${contest.id}`,
-          String(entryWindow)
-        )
-      )
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      await enqueueAndAttemptEmail({
+        idempotencyKey: `contest-live/${contest.id}/${contest.lister_id}`,
+        eventType: 'contest_live',
+        contestId: contest.id,
+        userId: contest.lister_id,
+        to: lister.email,
+        payload: {
+          listerName: lister.full_name ?? 'there',
+          contestTitle: contest.title,
+          contestUrl: `${appUrl}/contest/${contest.id}`,
+          entryWindowHours: String(entryWindow),
+        },
+      })
     }
 
-    console.log('[Webhook] Contest activated:', contest.id)
-    console.log('[Webhook] Entry deadline set:', contest.id, entryDeadline)
+    return Response.json(
+      {
+        status:
+          existing.payment_status === 'captured'
+            ? 'already_processed'
+            : 'captured',
+      },
+      { status: 200 }
+    )
   }
 
   if (event.event === 'payment.failed') {
-    const orderId = event.payload.payment.entity.order_id
-    await supabase.from('contests')
-      .update({ status: 'cancelled' })
-      .eq('razorpay_order_id', orderId)
-    await supabase.from('payments')
-      .update({ payment_status: 'failed' })
-      .eq('razorpay_order_id', orderId)
-    console.log('[Webhook] Payment failed, order:', orderId)
+    // One Razorpay order may have multiple payment attempts. A failed attempt
+    // must never cancel a funded contest or block a later captured attempt.
+    return Response.json({ status: 'failed_attempt_acknowledged' }, { status: 200 })
   }
 
-  return Response.json({ status: 'ok' }, { status: 200 })
+  if (event.event === 'refund.processed') {
+    const refund = refundFromEvent(event)
+    if (
+      !refund ||
+      !['no_submissions', 'no_valid_submissions'].includes(
+        refund.notes?.reason ?? ''
+      )
+    ) {
+      return Response.json({ status: 'refund_ignored' }, { status: 200 })
+    }
+
+    const { data: paymentRecord, error: refundLookupError } = await supabase
+      .from('payments')
+      .select('id, amount, payment_status')
+      .eq('razorpay_payment_id', refund.payment_id)
+      .single()
+
+    if (refundLookupError || !paymentRecord) {
+      return Response.json({ error: 'Refund payment unavailable' }, { status: 500 })
+    }
+    if (refund.amount !== paymentRecord.amount) {
+      Sentry.captureMessage('Razorpay refund amount mismatch', { level: 'error' })
+      return Response.json({ status: 'refund_mismatch_flagged' }, { status: 200 })
+    }
+    if (paymentRecord.payment_status !== 'refunded') {
+      const { error: refundUpdateError } = await supabase
+        .from('payments')
+        .update({ payment_status: 'refunded' })
+        .eq('id', paymentRecord.id)
+        .eq('payment_status', 'captured')
+
+      if (refundUpdateError) {
+        return Response.json({ error: 'Refund reconciliation failed' }, { status: 500 })
+      }
+    }
+    return Response.json({ status: 'refund_reconciled' }, { status: 200 })
+  }
+
+  if (event.event === 'refund.failed') {
+    Sentry.captureMessage('Razorpay refund failed', { level: 'error' })
+    return Response.json({ status: 'refund_failure_recorded' }, { status: 200 })
+  }
+
+  return Response.json({ status: 'ignored' }, { status: 200 })
 }

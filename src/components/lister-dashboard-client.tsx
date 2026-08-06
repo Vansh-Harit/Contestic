@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { PlusCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { ContestFormData } from '@/lib/types'
+import { formatINR } from '@/lib/utils'
+import { ContestStatusBadge } from '@/components/contest-lifecycle'
 
 interface Contest {
   id: string
@@ -19,33 +21,42 @@ interface Contest {
 
 interface ListerDashboardClientProps {
   contests: Contest[]
-  userId: string
 }
 
 const SIDEBAR_TABS = [
-  { key: 'active', label: 'Active Contests' },
-  { key: 'past', label: 'Past Winners' },
+  { key: 'active', label: 'Active and judging' },
+  { key: 'past', label: 'Completed' },
   { key: 'drafts', label: 'Drafts' },
 ]
 
-export default function ListerDashboardClient({ contests, userId }: ListerDashboardClientProps) {
+export default function ListerDashboardClient({ contests }: ListerDashboardClientProps) {
   const [activeTab, setActiveTab] = useState('active')
-  const [draft, setDraft] = useState<any | null>(null)
-  const router = useRouter()
-
+  const [draft, setDraft] = useState<{
+    timestamp: number
+    formData?: Partial<ContestFormData>
+  } | null>(null)
   useEffect(() => {
-    const saved = localStorage.getItem('contestic_contest_draft')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (Date.now() - parsed.timestamp < 172800000) {
-          setDraft(parsed)
-        } else {
-          localStorage.removeItem('contestic_contest_draft')
+    let cancelled = false
+
+    queueMicrotask(() => {
+      if (cancelled) return
+      const saved = localStorage.getItem('contestic_contest_draft')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Date.now() - parsed.timestamp < 172800000) {
+            setDraft(parsed)
+          } else {
+            localStorage.removeItem('contestic_contest_draft')
+          }
+        } catch (error) {
+          console.error(error)
         }
-      } catch (e) {
-        console.error(e)
       }
+    })
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -60,21 +71,23 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
   }, [contests, activeTab])
 
   return (
-    <div className="flex min-h-[calc(100vh-80px)] bg-white font-sans">
-      {/* Left Sidebar - Purple */}
-      <aside className="w-[240px] bg-[#6366F1] flex flex-col shrink-0 text-white">
+    <div className="flex min-h-[calc(100vh-72px)] flex-col bg-white font-sans md:flex-row">
+      <aside className="flex w-full shrink-0 flex-col border-b border-outline-variant bg-gray-50 md:w-[220px] md:border-b-0 md:border-r">
         {/* Nav Tabs */}
-        <nav className="flex-1 px-4 py-8 flex flex-col gap-2">
+        <div className="px-4 pt-5 md:px-5 md:pt-8">
+          <p className="font-heading text-xl font-bold text-on-surface">Hosted contests</p>
+        </div>
+        <nav className="flex flex-1 gap-2 overflow-x-auto px-4 py-4 md:flex-col md:overflow-visible md:px-3 md:py-6">
           {SIDEBAR_TABS.map(tab => {
             const isActive = activeTab === tab.key
             return (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center px-4 py-3 rounded-lg text-[15px] font-medium transition-all cursor-pointer text-left w-full ${
+                className={`flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors md:w-full ${
                   isActive
-                    ? 'bg-white/20 border border-white/30 shadow-sm'
-                    : 'hover:bg-white/10 text-white/90'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-gray-600 hover:bg-white hover:text-gray-900'
                 }`}
               >
                 {tab.label}
@@ -85,18 +98,21 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-y-auto">
-        <div className="px-10 py-10">
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-[26px] font-bold text-gray-900">
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="px-4 py-8 md:px-8 lg:px-10">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="mb-1 text-sm text-secondary">Manage the contests you have created.</p>
+              <h1 className="font-heading text-3xl font-bold text-gray-900">
               {activeTab === 'active' 
-                ? 'Your Active Contests' 
+                ? 'Active and judging'
                 : activeTab === 'past' 
-                  ? 'Past Winners' 
-                  : 'Your Drafts'}
-            </h1>
+                  ? 'Completed contests'
+                  : 'Draft contests'}
+              </h1>
+            </div>
             <Link href="/post" onClick={() => localStorage.removeItem('contestic_contest_draft')}>
-              <button className="bg-[#6366F1] text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-[#4F46E5] transition-colors flex items-center gap-2 cursor-pointer shadow-sm">
+              <button className="flex min-h-11 items-center gap-2 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
                 <PlusCircle className="h-4 w-4" />
                 <span>Host a Contest</span>
               </button>
@@ -104,13 +120,15 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
           </div>
 
           {/* Table Container */}
-          <div className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="min-w-[820px]">
             {/* Header Row */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_120px] gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_120px] gap-4 border-b border-gray-200 bg-gray-50 px-6 py-3">
               <div className="font-bold text-[13px] text-gray-900 uppercase tracking-wide">Contest Title</div>
               <div className="font-bold text-[13px] text-gray-900 uppercase tracking-wide">
                 {activeTab === 'drafts' ? 'Category' : 'Entries Received'}
               </div>
+              <div className="font-bold text-[13px] text-gray-900 uppercase tracking-wide">Prize</div>
               <div className="font-bold text-[13px] text-gray-900 uppercase tracking-wide">Time Remaining</div>
               <div></div>
             </div>
@@ -119,13 +137,16 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
             {activeTab === 'drafts' ? (
               draft ? (
                 <div className="flex flex-col">
-                  <div className="grid grid-cols-[2fr_1fr_1fr_120px] gap-4 px-6 py-4 items-center">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_120px] items-center gap-4 px-6 py-4">
                     <div className="text-[15px] text-gray-800 font-medium line-clamp-1 pr-4">
                       {draft.formData?.title || 'Untitled Contest'}
                     </div>
                     
                     <div className="text-[14px] text-gray-600">
                       {draft.formData?.category || 'N/A'}
+                    </div>
+                    <div className="text-[14px] font-medium text-gray-700">
+                      {draft.formData?.prize_amount_inr ? `₹${draft.formData.prize_amount_inr.toLocaleString('en-IN')}` : 'Not set'}
                     </div>
                     
                     <div className="text-[14px] text-gray-600">
@@ -134,7 +155,7 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
                     
                     <div className="flex justify-end">
                       <Link href="/post?load_draft=true">
-                        <button className="bg-[#6366F1] text-white px-4 py-2 rounded-lg font-semibold text-[13px] hover:bg-[#4F46E5] transition-colors cursor-pointer w-full shadow-sm">
+                        <button className="w-full rounded-lg bg-primary-container px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
                           Continue
                         </button>
                       </Link>
@@ -157,7 +178,7 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
               ) : (
                 <div className="py-20 flex flex-col items-center justify-center text-center px-6">
                   <p className="text-gray-500 font-medium mb-4">
-                    You don't have any drafts in progress.
+                    You don&apos;t have any drafts in progress.
                   </p>
                 </div>
               )
@@ -168,16 +189,23 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
                   return (
                     <div 
                       key={contest.id} 
-                      className={`grid grid-cols-[2fr_1fr_1fr_120px] gap-4 px-6 py-4 items-center ${
+                      className={`grid grid-cols-[2fr_1fr_1fr_1fr_120px] items-center gap-4 px-6 py-4 ${
                         isLast ? '' : 'border-b border-gray-100'
                       }`}
                     >
-                      <div className="text-[15px] text-gray-800 font-medium line-clamp-1 pr-4">
-                        {contest.title}
+                      <div className="min-w-0 pr-4">
+                        <div className="line-clamp-1 text-[15px] font-medium text-gray-800">{contest.title}</div>
+                        <ContestStatusBadge
+                          phase={contest.status === 'judging' ? 'judging' : contest.status === 'completed' ? 'completed' : 'active'}
+                          className="mt-1.5 px-2 py-0.5 text-[10px]"
+                        />
                       </div>
                       
                       <div className="text-[14px] text-gray-600">
                         {contest.entry_count ?? 0} entries
+                      </div>
+                      <div className="text-[14px] font-semibold text-indigo-700">
+                        {contest.prize_amount == null ? 'Not set' : formatINR(contest.prize_amount)}
                       </div>
                       
                       <div className="text-[14px] text-gray-600">
@@ -190,8 +218,8 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
                       
                       <div className="flex justify-end">
                         <Link href={`/dashboard/lister/contest/${contest.id}`}>
-                          <button className="bg-[#6366F1] text-white px-4 py-2 rounded-lg font-semibold text-[13px] hover:bg-[#4F46E5] transition-colors cursor-pointer w-full shadow-sm">
-                            View Details
+                          <button className="w-full rounded-lg bg-primary-container px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+                            {contest.status === 'judging' ? 'Review' : 'View'}
                           </button>
                         </Link>
                       </div>
@@ -208,13 +236,14 @@ export default function ListerDashboardClient({ contests, userId }: ListerDashbo
                 </p>
                 {activeTab === 'active' && (
                   <Link href="/post" onClick={() => localStorage.removeItem('contestic_contest_draft')}>
-                    <button className="bg-[#6366F1] text-white px-5 py-2.5 rounded-lg font-bold text-sm hover:bg-[#4F46E5] transition-colors shadow-sm">
+                    <button className="rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
                       Host your first contest
                     </button>
                   </Link>
                 )}
               </div>
             )}
+            </div>
           </div>
         </div>
       </main>

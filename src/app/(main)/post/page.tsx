@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Tag, PenTool, Palette, ChevronLeft, ChevronDown, Settings2, Calendar, Clock, X, LayoutGrid, Video } from 'lucide-react'
+import { FileText, Tag, Palette, ChevronLeft, Calendar, Clock, X, LayoutGrid, Video, CreditCard, ShieldCheck, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ContestFormData, ContestCategory, AIPolicy } from '@/lib/types'
+import { ContestFormData } from '@/lib/types'
 import {
   formatINR,
   rupeesToPaise,
@@ -36,28 +36,45 @@ export default function PostContestPage() {
   })
 
   const [draftLoaded, setDraftLoaded] = useState(false)
+  const [draftContestId, setDraftContestId] = useState<string | null>(null)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('load_draft') === 'true') {
-      const saved = localStorage.getItem('contestic_contest_draft')
-      if (saved) {
-        try {
-          const { formData: savedData, step: savedStep, timestamp } = JSON.parse(saved)
-          // Check if less than 2 days old (2 * 24 * 60 * 60 * 1000 = 172800000 ms)
-          if (Date.now() - timestamp < 172800000) {
-            setFormData(savedData)
-            setStep(savedStep)
-            toast.success('Restored your draft in progress!', { position: 'top-center' })
-          } else {
-            localStorage.removeItem('contestic_contest_draft')
+    let cancelled = false
+
+    queueMicrotask(() => {
+      if (cancelled) return
+
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('load_draft') === 'true') {
+        const saved = localStorage.getItem('contestic_contest_draft')
+        if (saved) {
+          try {
+            const {
+              formData: savedData,
+              step: savedStep,
+              timestamp,
+              contestId,
+            } = JSON.parse(saved)
+            // Check if less than 2 days old (2 * 24 * 60 * 60 * 1000 = 172800000 ms)
+            if (Date.now() - timestamp < 172800000) {
+              setFormData(savedData)
+              setStep(savedStep)
+              setDraftContestId(typeof contestId === 'string' ? contestId : null)
+              toast.success('Restored your draft in progress!', { position: 'top-center' })
+            } else {
+              localStorage.removeItem('contestic_contest_draft')
+            }
+          } catch (error) {
+            console.error('Failed to parse draft', error)
           }
-        } catch (e) {
-          console.error('Failed to parse draft', e)
         }
       }
+      setDraftLoaded(true)
+    })
+
+    return () => {
+      cancelled = true
     }
-    setDraftLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -67,10 +84,11 @@ export default function PostContestPage() {
     const draft = {
       formData,
       step,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      contestId: draftContestId,
     }
     localStorage.setItem('contestic_contest_draft', JSON.stringify(draft))
-  }, [formData, step, draftLoaded])
+  }, [formData, step, draftLoaded, draftContestId])
 
   const updateField = <K extends keyof ContestFormData>(
     key: K,
@@ -211,13 +229,30 @@ export default function PostContestPage() {
       const res = await fetch('/api/contests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          ...(draftContestId ? { resume_contest_id: draftContestId } : {}),
+        }),
       })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Failed to create contest')
       }
       const { contest_id, order_id, amount, key } = await res.json()
+      if (typeof contest_id !== 'string') {
+        throw new Error('Payment draft could not be identified')
+      }
+      setDraftContestId(contest_id)
+
+      localStorage.setItem(
+        'contestic_contest_draft',
+        JSON.stringify({
+          formData,
+          step,
+          timestamp: Date.now(),
+          contestId: contest_id,
+        })
+      )
 
       // Load Razorpay checkout script if not already loaded
       await new Promise<void>((resolve, reject) => {
@@ -236,10 +271,24 @@ export default function PostContestPage() {
         name: 'Contestic',
         description: formData.title,
         order_id,
-        handler: function () {
-          localStorage.removeItem('contestic_contest_draft')
-          toast.success('Payment successful! Contest going live...')
-          setTimeout(() => router.push('/dashboard/lister'), 2500)
+        handler: async function (response) {
+          try {
+            const verification = await fetch('/api/payments/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(response),
+            })
+            if (!verification.ok) {
+              throw new Error('Payment verification failed')
+            }
+
+            localStorage.removeItem('contestic_contest_draft')
+            toast.success('Payment verified! Contest going live...')
+            setTimeout(() => router.push('/dashboard/lister'), 2500)
+          } catch {
+            toast.error('Payment received but verification is pending. Please check your dashboard shortly.')
+            setIsLoading(false)
+          }
         },
         theme: { color: '#F59E0B' },
         modal: {
@@ -269,18 +318,18 @@ export default function PostContestPage() {
           : 'Review & Pay'
 
   return (
-    <main className="max-w-4xl mx-auto w-full px-container-padding-mobile md:px-container-padding-desktop py-12 flex-1 flex flex-col font-sans">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-container-padding-mobile py-8 font-sans md:px-container-padding-desktop md:py-12">
       {/* Progress Indicator */}
-      <div className="mb-section-gap">
-        <div className="flex justify-between items-center mb-4">
-          <span className="font-label-caps text-label-caps text-primary uppercase font-bold tracking-wider text-xs">
+      <div className="mb-10 rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <span className="text-xs font-semibold text-primary">
             Step {step} of 4: {stepLabel}
           </span>
-          <span className="font-label-caps text-label-caps text-secondary uppercase font-bold tracking-wider text-xs">
+          <span className="text-xs font-medium text-secondary">
             {step === 1 ? '25% Complete' : step === 2 ? '50% Complete' : step === 3 ? '75% Complete' : '100% Complete'}
           </span>
         </div>
-        <div className="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
           <div 
             className="h-full bg-primary-container transition-all duration-300"
             style={{ width: `${(step / 4) * 100}%` }}
@@ -290,29 +339,29 @@ export default function PostContestPage() {
 
       {/* ============ STEP 1: BASICS ============ */}
       {step === 1 && (
-        <section className="space-y-12 animate-in fade-in duration-300">
+        <section className="space-y-8">
           <div>
-            <h1 className="text-headline-lg font-heading font-bold mb-3 text-on-surface">
+            <h1 className="mb-2 font-heading text-3xl font-bold text-on-surface md:text-4xl">
               Start your creative contest
             </h1>
-            <p className="text-body-lg text-secondary">
+            <p className="text-base text-secondary">
               Select a category and define the scope of your draft.
             </p>
           </div>
 
           {/* Category Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-gutter">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {/* Content Writing */}
             <button
               type="button"
               onClick={() => updateField('category', 'Content Writing')}
-              className={`p-6 flex flex-col items-center justify-center text-center border rounded-xl transition-all hover:shadow-md cursor-pointer bg-surface-container-lowest ${
+              className={`flex min-h-28 flex-col items-center justify-center rounded-xl border bg-white p-4 text-center transition-colors hover:border-indigo-300 ${
                 formData.category === 'Content Writing'
                   ? 'border-primary-container ring-1 ring-primary-container'
                   : 'border-outline-variant'
               }`}
             >
-              <FileText className={`h-10 w-10 mb-4 transition-colors ${
+              <FileText className={`mb-2 h-6 w-6 transition-colors ${
                 formData.category === 'Content Writing' ? 'text-primary' : 'text-secondary'
               }`} />
               <span className="font-heading font-bold text-on-surface text-body-md">Content Writing</span>
@@ -322,13 +371,13 @@ export default function PostContestPage() {
             <button
               type="button"
               onClick={() => updateField('category', 'Naming')}
-              className={`p-6 flex flex-col items-center justify-center text-center border rounded-xl transition-all hover:shadow-md cursor-pointer bg-surface-container-lowest ${
+              className={`flex min-h-28 flex-col items-center justify-center rounded-xl border bg-white p-4 text-center transition-colors hover:border-indigo-300 ${
                 formData.category === 'Naming'
                   ? 'border-primary-container ring-1 ring-primary-container'
                   : 'border-outline-variant'
               }`}
             >
-              <Tag className={`h-10 w-10 mb-4 transition-colors ${
+              <Tag className={`mb-2 h-6 w-6 transition-colors ${
                 formData.category === 'Naming' ? 'text-primary' : 'text-secondary'
               }`} />
               <span className="font-heading font-bold text-on-surface text-body-md">Naming</span>
@@ -339,13 +388,13 @@ export default function PostContestPage() {
             <button
               type="button"
               onClick={() => updateField('category', 'Design')}
-              className={`p-6 flex flex-col items-center justify-center text-center border rounded-xl transition-all hover:shadow-md cursor-pointer bg-surface-container-lowest ${
+              className={`flex min-h-28 flex-col items-center justify-center rounded-xl border bg-white p-4 text-center transition-colors hover:border-indigo-300 ${
                 formData.category === 'Design'
                   ? 'border-primary-container ring-1 ring-primary-container'
                   : 'border-outline-variant'
               }`}
             >
-              <Palette className={`h-10 w-10 mb-4 transition-colors ${
+              <Palette className={`mb-2 h-6 w-6 transition-colors ${
                 formData.category === 'Design' ? 'text-primary' : 'text-secondary'
               }`} />
               <span className="font-heading font-bold text-on-surface text-body-md">Design</span>
@@ -355,13 +404,13 @@ export default function PostContestPage() {
             <button
               type="button"
               onClick={() => updateField('category', 'Video Editing')}
-              className={`p-6 flex flex-col items-center justify-center text-center border rounded-xl transition-all hover:shadow-md cursor-pointer bg-surface-container-lowest ${
+              className={`flex min-h-28 flex-col items-center justify-center rounded-xl border bg-white p-4 text-center transition-colors hover:border-indigo-300 ${
                 formData.category === 'Video Editing'
                   ? 'border-primary-container ring-1 ring-primary-container'
                   : 'border-outline-variant'
               }`}
             >
-              <Video className={`h-10 w-10 mb-4 transition-colors ${
+              <Video className={`mb-2 h-6 w-6 transition-colors ${
                 formData.category === 'Video Editing' ? 'text-primary' : 'text-secondary'
               }`} />
               <span className="font-heading font-bold text-on-surface text-body-md">Video Editing</span>
@@ -371,13 +420,13 @@ export default function PostContestPage() {
             <button
               type="button"
               onClick={() => updateField('category', 'Others')}
-              className={`p-6 flex flex-col items-center justify-center text-center border rounded-xl transition-all hover:shadow-md cursor-pointer bg-surface-container-lowest ${
+              className={`flex min-h-28 flex-col items-center justify-center rounded-xl border bg-white p-4 text-center transition-colors hover:border-indigo-300 ${
                 formData.category === 'Others'
                   ? 'border-primary-container ring-1 ring-primary-container'
                   : 'border-outline-variant'
               }`}
             >
-              <LayoutGrid className={`h-10 w-10 mb-4 transition-colors ${
+              <LayoutGrid className={`mb-2 h-6 w-6 transition-colors ${
                 formData.category === 'Others' ? 'text-primary' : 'text-secondary'
               }`} />
               <span className="font-heading font-bold text-on-surface text-body-md">Others</span>
@@ -392,7 +441,7 @@ export default function PostContestPage() {
           )}
 
           {/* Form Details */}
-          <div className="space-y-8 max-w-2xl">
+          <div className="max-w-2xl space-y-6 rounded-2xl border border-outline-variant bg-white p-5 shadow-sm md:p-6">
             <div className="flex flex-col gap-2">
               <label className="text-label-caps uppercase tracking-widest text-secondary font-bold text-xs">
                 Public Description
@@ -410,7 +459,7 @@ export default function PostContestPage() {
                 <span>{formData.public_summary.length}/200 characters</span>
               </div>
               <span className="text-xs text-secondary italic">
-                This is the ONLY thing people see before entering. Keep it intriguing but don't reveal too much.
+                This is the ONLY thing people see before entering. Keep it intriguing but don&apos;t reveal too much.
               </span>
             </div>
             <div className="flex flex-col gap-2">
@@ -544,12 +593,12 @@ export default function PostContestPage() {
 
       {/* ============ STEP 2: MATERIALS FOR PARTICIPANTS ============ */}
       {step === 2 && (
-        <section className="space-y-8 animate-in fade-in duration-300">
+        <section className="space-y-8">
           <div>
-            <h1 className="text-headline-lg font-heading font-bold mb-3 text-on-surface">
+            <h1 className="mb-2 font-heading text-3xl font-bold text-on-surface md:text-4xl">
               Materials for Participants
             </h1>
-            <p className="text-body-lg text-secondary">
+            <p className="text-base text-secondary">
               Add raw files, reference links, or detailed instructions.
             </p>
           </div>
@@ -635,7 +684,7 @@ export default function PostContestPage() {
 
             <div className="pt-4 border-t border-outline-variant/30 text-center">
               <p className="text-body-sm text-secondary">
-                No materials? That's fine &mdash; participants will just receive your full brief description after entry closes.
+                No materials? That&apos;s fine &mdash; participants will just receive your full brief description after entry closes.
               </p>
             </div>
           </div>
@@ -644,17 +693,17 @@ export default function PostContestPage() {
 
       {/* ============ STEP 3: REWARDS & DEADLINE ============ */}
       {step === 3 && (
-        <section className="space-y-12 animate-in fade-in duration-300">
+        <section className="space-y-8">
           <div>
-            <h1 className="text-headline-lg font-heading font-bold mb-3 text-on-surface">
+            <h1 className="mb-2 font-heading text-3xl font-bold text-on-surface md:text-4xl">
               Set your rewards and deadline
             </h1>
-            <p className="text-body-lg text-secondary">
+            <p className="text-base text-secondary">
               Define the prize pool, maximum entries, and contest timeline.
             </p>
           </div>
 
-          <div className="space-y-8 max-w-2xl">
+          <div className="max-w-2xl space-y-6 rounded-2xl border border-outline-variant bg-white p-5 shadow-sm md:p-6">
             {/* Prize Amount */}
             <div className="flex flex-col gap-2">
               <label className="text-label-caps uppercase tracking-widest text-secondary font-bold text-xs">
@@ -804,96 +853,107 @@ export default function PostContestPage() {
 
       {/* ============ STEP 4: REVIEW & PAY ============ */}
       {step === 4 && (
-        <section className="space-y-12 animate-in fade-in duration-300">
+        <section className="space-y-8">
           <div>
-            <h1 className="text-headline-lg font-heading font-bold mb-3 text-on-surface">
-              Review and launch
+            <h1 className="mb-2 font-heading text-3xl font-bold text-on-surface md:text-4xl">
+              Review and pay
             </h1>
-            <p className="text-body-lg text-secondary">
-              Verify all details before proceeding to payment.
+            <p className="text-base text-secondary">
+              Confirm the contest setup and payment amount before opening Razorpay Checkout.
             </p>
-            <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 max-w-xl">
-              <span className="text-amber-600 font-bold text-xs mt-px">NOTE:</span>
-              <span className="text-xs text-amber-800">
-                This will be saved as a draft for 2 days.
-              </span>
-            </div>
           </div>
 
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden">
-            {/* Summary rows */}
-            <div className="divide-y divide-outline-variant">
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Category</span>
-                <span className="font-bold text-on-surface">{formData.category}</span>
-              </div>
-              <div className="flex justify-between items-start px-8 py-5">
-                <span className="text-secondary text-body-sm">Title</span>
-                <span className="font-bold text-on-surface text-right max-w-sm">{formData.title}</span>
-              </div>
-              <div className="flex justify-between items-start px-8 py-5">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-secondary text-body-sm">Public Description</span>
-                  <span className="text-[10px] text-primary font-bold uppercase tracking-wider">What public sees</span>
+          <div className="overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-md">
+            <div className="flex flex-col gap-4 border-b border-outline-variant bg-gray-50 px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:px-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                  <CreditCard className="h-5 w-5" aria-hidden="true" />
                 </div>
-                <span className="text-on-surface text-body-sm text-right max-w-sm italic">
-                  "{formData.public_summary}"
-                </span>
+                <div>
+                  <h2 className="font-heading text-xl font-bold text-on-surface">Payment summary</h2>
+                  <p className="text-sm text-secondary">Your contest goes live after payment is confirmed.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-medium text-emerald-700">
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                Razorpay secure checkout
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_330px]">
+              <div className="p-6 md:p-8">
+                <p className="text-xs font-semibold uppercase tracking-wider text-secondary">Contest</p>
+                <h3 className="mt-2 font-heading text-2xl font-bold leading-snug text-on-surface">{formData.title}</h3>
+                <span className="mt-3 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{formData.category}</span>
+
+                <dl className="mt-7 grid gap-5 border-t border-outline-variant pt-6 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-medium text-secondary">AI allowance</dt>
+                    <dd className="mt-1 text-sm font-semibold text-on-surface">
+                      {formData.ai_policy === 'none' ? 'Not allowed' : formData.ai_policy === 'partial' ? 'Limited use' : 'Allowed'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="flex items-center gap-1.5 text-xs font-medium text-secondary"><Users className="h-3.5 w-3.5" aria-hidden="true" />Maximum entries</dt>
+                    <dd className="mt-1 text-sm font-semibold text-on-surface">{formData.max_entries}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-secondary">Entry period</dt>
+                    <dd className="mt-1 text-sm font-semibold text-on-surface">{formData.entry_window_hours} hours after launch</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-secondary">Submission deadline</dt>
+                    <dd className="mt-1 text-sm font-semibold text-on-surface">
+                      {formData.deadline
+                        ? new Date(formData.deadline).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                        : 'Not set'}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs font-medium text-secondary">Participant materials</dt>
+                    <dd className="mt-1 text-sm font-semibold text-on-surface">
+                      {formData.materials.length === 0
+                        ? 'No additional materials'
+                        : `${formData.materials.length} ${formData.materials.length === 1 ? 'material' : 'materials'}, revealed after entry closes`}
+                    </dd>
+                  </div>
+                </dl>
               </div>
 
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">AI Allowance</span>
-                <span className="font-bold text-on-surface capitalize">{formData.ai_policy === 'none' ? 'None' : formData.ai_policy === 'partial' ? 'Moderate' : 'No restriction'}</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Prize Pool</span>
-                <span className="font-mono font-bold text-on-surface">{formatINR(prizePaise)}</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Platform Fee</span>
-                <span className="font-mono font-bold text-on-surface">{formatINR(platformFee)}</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5 bg-surface-container-low">
-                <span className="font-bold text-on-surface">Total to Pay</span>
-                <span className="font-mono font-bold text-primary-container text-headline-sm">{formatINR(totalCharged)}</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Max Entries</span>
-                <span className="font-mono font-bold text-on-surface">{formData.max_entries}</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Deadline</span>
-                <span className="font-bold text-on-surface">
-                  {formData.deadline
-                    ? new Date(formData.deadline).toLocaleString('en-IN', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })
-                    : '—'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Entry Window</span>
-                <span className="font-bold text-on-surface">{formData.entry_window_hours} hours</span>
-              </div>
-              <div className="flex justify-between items-center px-8 py-5">
-                <span className="text-secondary text-body-sm">Materials Count</span>
-                <span className="font-bold text-on-surface">
-                  {formData.materials.length} {formData.materials.length === 1 ? 'material' : 'materials'} will be revealed after entry closes
-                </span>
-              </div>
+              <aside className="border-t border-outline-variant bg-[#F8F7FF] p-6 md:p-8 lg:border-l lg:border-t-0">
+                <h3 className="font-heading text-lg font-bold text-on-surface">Amount due</h3>
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-secondary">Winner prize</span>
+                    <span className="font-mono font-semibold text-on-surface">{formatINR(prizePaise)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-secondary">Contestic fee (2.5%)</span>
+                    <span className="font-mono font-semibold text-on-surface">{formatINR(platformFee)}</span>
+                  </div>
+                  <div className="border-t border-indigo-100 pt-4">
+                    <div className="flex items-end justify-between gap-4">
+                      <span className="font-semibold text-on-surface">Total payment</span>
+                      <span className="font-mono text-2xl font-bold text-indigo-700">{formatINR(totalCharged)}</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-6 rounded-lg border border-indigo-100 bg-white/70 p-3 text-xs leading-5 text-secondary">
+                  This setup is saved as a draft for up to two days. Once payment is confirmed and the contest is live, it cannot be cancelled.
+                </p>
+              </aside>
             </div>
           </div>
         </section>
       )}
 
       {/* Navigation Buttons */}
-      <div className="mt-section-gap flex items-center justify-between border-t border-outline-variant pt-8">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-10 flex items-center justify-between border-t border-outline-variant bg-white/95 px-4 py-4 backdrop-blur-sm md:static md:mx-0 md:bg-transparent md:px-0 md:pt-6 md:backdrop-blur-none">
         {step > 1 ? (
           <button
             type="button"
             onClick={handleBack}
-            className="flex items-center gap-2 px-8 py-3 border border-outline-variant rounded-lg font-body-md font-semibold hover:bg-surface-container-low transition-colors cursor-pointer bg-surface-container-lowest"
+            className="flex min-h-11 items-center gap-2 rounded-lg border border-outline-variant bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-gray-50 md:px-8"
           >
             <ChevronLeft className="h-4 w-4" />
             Back
@@ -905,7 +965,7 @@ export default function PostContestPage() {
           <button
             type="button"
             onClick={handleNext}
-            className="px-12 py-3 bg-primary-container text-on-primary-container rounded-lg font-heading font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer text-body-md"
+            className="min-h-11 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 md:px-10"
           >
             {step === 1 ? 'Continue to Materials' : step === 2 ? 'Continue to Rewards' : 'Review & Pay'}
           </button>
@@ -914,7 +974,7 @@ export default function PostContestPage() {
             type="button"
             onClick={handlePayment}
             disabled={isLoading}
-            className="px-12 py-3 bg-primary-container text-on-primary-container rounded-lg font-heading font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer text-body-md disabled:opacity-50 disabled:cursor-not-allowed"
+            className="min-h-11 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 md:px-10"
           >
             {isLoading ? 'Processing...' : `Pay ${formatINR(totalCharged)}`}
           </button>

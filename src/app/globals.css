@@ -4,14 +4,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
-html {
-  font-size: 120%;
-}
-
 @theme inline {
   /* Fonts */
-  --font-sans: var(--font-oswald), Arial, Helvetica, sans-serif;
-  --font-mono: var(--font-oswald), Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-inter), Arial, Helvetica, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-oswald), Arial, Helvetica, sans-serif;
 
   /* Spacing */
@@ -49,12 +45,12 @@ html {
   --color-surface-container-lowest: #ffffff;
   --color-tertiary-container: #1abdff;
   --color-surface: #f9f9fb;
-  --color-surface-tint: #0f294a;
+  --color-surface-tint: #6366f1;
   --color-on-primary: #ffffff;
   --color-on-surface-variant: #475569;
   --color-on-secondary-fixed: #141b2b;
   --color-tertiary-fixed-dim: #7fd0ff;
-  --color-on-primary-fixed-variant: #1e3a8a;
+  --color-on-primary-fixed-variant: #4338ca;
   --color-error-container: #ffdad6;
   --color-surface-container-high: #e8e8ea;
   --color-on-secondary-container: #5c6274;
@@ -62,11 +58,11 @@ html {
   --color-on-error: #ffffff;
   --color-on-tertiary-fixed: #001e2d;
   --color-error: #ba1a1a;
-  --color-primary-container: #1e3a8a;
+  --color-primary-container: #6366f1;
   --color-inverse-surface: #2f3132;
   --color-outline: #64748b;
   --color-on-tertiary-container: #004966;
-  --color-on-primary-fixed: #1e3a8a;
+  --color-on-primary-fixed: #4338ca;
   --color-on-secondary-fixed-variant: #404758;
   --color-inverse-primary: #93c5fd;
   --color-primary-fixed-dim: #93c5fd;
@@ -75,13 +71,13 @@ html {
   --color-surface-variant: #e2e2e4;
   --color-tertiary: #00658b;
   --color-on-tertiary: #ffffff;
-  --color-primary-fixed: #dbeafe;
+  --color-primary-fixed: #e0e7ff;
   --color-secondary-fixed: #dce2f7;
   --color-on-error-container: #93000a;
   --color-on-secondary: #ffffff;
   --color-on-tertiary-fixed-variant: #004c6a;
   --color-on-primary-container: #ffffff;
-  --color-outline-variant: #000000;
+  --color-outline-variant: #e5e7eb;
   --color-surface-container: #edeef0;
   --color-tertiary-fixed: #c5e7ff;
 }
@@ -93,7 +89,7 @@ html {
   --card-foreground: #1a1c1d;
   --popover: #ffffff;
   --popover-foreground: #1a1c1d;
-  --primary: #0f294a;
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
   --secondary: #575e70;
   --secondary-foreground: #ffffff;
@@ -103,10 +99,10 @@ html {
   --accent-foreground: #1a1c1d;
   --destructive: #ba1a1a;
   --destructive-foreground: #ffffff;
-  --border: #000000;
-  --input: #000000;
-  --ring: #1e3a8a;
-  --radius: 0.5rem;
+  --border: #e5e7eb;
+  --input: #d1d5db;
+  --ring: #6366f1;
+  --radius: 0.75rem;
 }
 
 .dark {
@@ -139,6 +135,21 @@ html {
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2;
+  }
+
+  button:disabled,
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
 }
 
 /* Custom styles for Material Symbols and active items */
@@ -150,7 +161,7 @@ html {
 }
 
 .active-tab {
-  border-bottom: 2px solid #0f294a;
-  color: #0f294a;
+  border-bottom: 2px solid #4f46e5;
+  color: #4f46e5;
   font-weight: 600;
 }

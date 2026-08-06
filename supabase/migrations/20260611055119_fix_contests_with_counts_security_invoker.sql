@@ -1,0 +1,4 @@
+-- Historical migration marker.
+-- The reconstructed view is created in
+-- 20260610081812_create_profiles_table.sql; current hardening is applied by
+-- 20260728151932_protect_contest_private_fields.sql.

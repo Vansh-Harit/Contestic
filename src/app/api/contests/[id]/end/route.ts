@@ -18,6 +18,8 @@ export async function PUT(
     return Response.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  const admin = createAdminClient()
+
   // Rate limiting (Upstash Redis)
   const { success, reset } = await submitRatelimit.limit(user.id)
   if (!success) {
@@ -33,7 +35,7 @@ export async function PUT(
   // Fetch contest and verify ownership
   const { data: contest, error: contestError } = await supabase
     .from('contests')
-    .select('id, lister_id, status, title')
+    .select('id, lister_id, status, title, deadline')
     .eq('id', contestId)
     .single()
 
@@ -55,8 +57,15 @@ export async function PUT(
     )
   }
 
+  if (new Date(contest.deadline).getTime() > Date.now()) {
+    return Response.json(
+      { error: 'The submission deadline is fixed and has not passed yet' },
+      { status: 400 }
+    )
+  }
+
   // Check submission count — cannot close with zero submissions
-  const { count: submissionCount } = await supabase
+  const { count: submissionCount } = await admin
     .from('submissions')
     .select('*', { count: 'exact', head: true })
     .eq('contest_id', contestId)
@@ -69,19 +78,24 @@ export async function PUT(
   }
 
   // Move to judging
-  const { error: updateError } = await supabase
+  const { data: transitioned, error: updateError } = await admin
     .from('contests')
-    .update({ status: 'judging', updated_at: new Date().toISOString() })
+    .update({ status: 'judging', updated_at: contest.deadline })
     .eq('id', contestId)
+    .eq('status', 'active')
+    .lte('deadline', new Date().toISOString())
+    .select('id')
+    .maybeSingle()
 
-  if (updateError) {
+  if (updateError || !transitioned) {
     console.error('[EndContest] Update failed:', updateError)
-    return Response.json({ error: 'Failed to update contest' }, { status: 500 })
+    return Response.json(
+      { error: 'Contest state changed. Refresh and try again.' },
+      { status: 409 }
+    )
   }
 
   // Notify all contestants
-  const admin = createAdminClient()
-
   const { data: contestants } = await admin
     .from('submissions')
     .select('contestant_id')

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   Dialog,
   DialogContent,
@@ -31,14 +32,20 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     setIsLoading(true)
     
     const supabase = createClient()
-    
+
     if (isSignUp) {
+      const trimmedName = fullName.trim()
+      if (!trimmedName || Array.from(trimmedName).length > 80) {
+        toast.error('Name must be between 1 and 80 characters')
+        setIsLoading(false)
+        return
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            full_name: fullName,
+            full_name: trimmedName,
           },
         },
       })
@@ -69,9 +76,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[420px] bg-surface-container-lowest border border-outline-variant p-8 rounded-xl font-sans">
+      <DialogContent className="rounded-2xl border border-outline-variant bg-white p-6 font-sans sm:max-w-[430px] sm:p-8">
         <DialogHeader className="space-y-2">
-          <DialogTitle className="text-headline-md font-heading font-bold text-on-surface">
+          <DialogTitle className="font-heading text-2xl font-bold text-on-surface">
             {isSignUp ? 'Create your account' : 'Welcome back'}
           </DialogTitle>
           <DialogDescription className="text-body-sm text-secondary">
@@ -95,7 +102,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
             })
             if (error) toast.error(error.message)
           }}
-          className="w-full flex items-center justify-center gap-3 bg-transparent border border-outline-variant rounded-lg py-3 px-4 text-body-md font-semibold text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer"
+          className="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-outline-variant bg-white px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-gray-50"
         >
           <svg width="20" height="20" viewBox="0 0 48 48">
             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -116,7 +123,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         <form onSubmit={handleSubmit} className="space-y-6">
           {isSignUp && (
             <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-label-caps uppercase tracking-wider text-secondary">
+              <Label htmlFor="fullName" className="text-sm font-medium text-on-surface">
                 Full Name
               </Label>
               <Input
@@ -125,14 +132,15 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 placeholder="John Doe"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
+                maxLength={80}
                 required
-                className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+                className="min-h-11 rounded-lg border-outline-variant bg-white"
               />
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-label-caps uppercase tracking-wider text-secondary">
+            <Label htmlFor="email" className="text-sm font-medium text-on-surface">
               Email Address
             </Label>
             <Input
@@ -142,22 +150,23 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+              className="min-h-11 rounded-lg border-outline-variant bg-white"
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <Label htmlFor="password" className="text-label-caps uppercase tracking-wider text-secondary">
+              <Label htmlFor="password" className="text-sm font-medium text-on-surface">
                 Password
               </Label>
               {!isSignUp && (
-                <button
-                  type="button"
-                  className="text-body-sm font-semibold text-primary hover:underline"
+                <Link
+                  href="/forgot-password"
+                  onClick={onClose}
+                  className="text-sm font-semibold text-primary transition-colors hover:text-indigo-700"
                 >
-                  Forgot Password?
-                </button>
+                  Forgot password?
+                </Link>
               )}
             </div>
             <Input
@@ -167,14 +176,14 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+              className="min-h-11 rounded-lg border-outline-variant bg-white"
             />
           </div>
 
           <Button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-primary-container text-on-primary-container py-3 rounded-lg font-bold text-body-md hover:opacity-90 transition-opacity cursor-pointer"
+            className="min-h-12 w-full rounded-lg bg-primary-container py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
           >
             {isLoading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </Button>

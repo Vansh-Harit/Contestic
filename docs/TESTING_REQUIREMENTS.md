@@ -1,6 +1,9 @@
 # Testing Requirements and Access
 
-Use staging/test-mode credentials only. A signed-in browser session is preferred to sharing passwords or long-lived tokens.
+Codex implements changes and supplies manual test cards. The user runs tests and
+reports results unless they explicitly ask Codex to run a named check. Use
+test-mode credentials for payment and external-service verification. A signed-in
+browser session is preferred to sharing passwords or long-lived tokens.
 
 | System | Needed for | Is read-only enough? | Safer alternative |
 | --- | --- | --- | --- |
@@ -17,9 +20,20 @@ Use staging/test-mode credentials only. A signed-in browser session is preferred
 
 Minimum test identities: lister, two contestants, admin, non-participant, and test inboxes for each. Never use real payout recipients or production contest data for testing.
 
-Required checks before launch:
+Manual reporting format:
+
+- Step that failed
+- Browser/account role used
+- Visible error message
+- Relevant screenshot
+- Approximate time of failure
+- Network response status/body when available, with secrets removed
+
+Required user-run checks before launch:
 
 - TypeScript, lint, and production build pass.
-- Staging E2E paths cover signup, payment success/failure, webhook retry, entry, brief unlock, submission, winner selection, payout status, refund, chat, and upload/download authorization.
+- E2E paths cover signup, payment success/failure, webhook retry, final entry,
+  withdrawal denial, post-entry-period brief unlock, submission, winner selection,
+  payout status, refund, chat, and upload/download authorization.
 - Supabase RLS and storage policy audit is recorded.
 - Cron execution is invoked manually in staging and its output is checked.

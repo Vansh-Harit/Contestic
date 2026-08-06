@@ -1,12 +1,31 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendEmail } from '@/lib/resend'
-import { entryClosedTimeEmail, entryClosedFullEmail, autoRefundEmail, base, btn } from '@/lib/email-templates'
+import { deliverPendingEmails, enqueueEmail } from '@/lib/email-delivery'
 import { formatINR } from '@/lib/utils'
 import { deleteContestFolder } from '@/lib/r2'
+import { createIdempotentFullRefund } from '@/lib/razorpay-refund'
+import { completeContestSubmissionCleanup } from '@/lib/contest-cleanup'
+
+type JoinedProfile = {
+  email: string | null
+  full_name: string | null
+}
+
+function normalizeProfile(
+  value: JoinedProfile | JoinedProfile[] | null | undefined
+): JoinedProfile | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('en-IN', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
+  })
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
-
   if (
     !process.env.CRON_SECRET ||
     authHeader !== `Bearer ${process.env.CRON_SECRET}`
@@ -15,420 +34,569 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient()
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const adminEmail = process.env.ADMIN_EMAIL?.trim()
+  const failures: string[] = []
   const counts = {
     entry_closed_notified: 0,
     refunded_empty: 0,
     moved_to_judging: 0,
+    judging_emails_queued: 0,
+    overdue_admin_alerts_queued: 0,
+    winner_emails_reconciled: 0,
+    payout_emails_reconciled: 0,
     reminders_sent: 0,
     upi_reminders_sent: 0,
+    submission_cleanups_completed: 0,
+    chat_histories_purged: 0,
   }
 
-  // ═══════════════════════════════════════
-  // TASK 1 — DETECT AND NOTIFY ENTRY PHASE CLOSURE
-  // ═══════════════════════════════════════
-  const { data: activeContests } = await supabase
+  const ensureNotification = async (input: {
+    userId: string
+    contestId: string
+    type: string
+    title: string
+    message: string
+  }) => {
+    const { data: existing, error: lookupError } = await supabase
+      .from('notifications')
+      .select('id')
+      .eq('user_id', input.userId)
+      .eq('contest_id', input.contestId)
+      .eq('type', input.type)
+      .limit(1)
+
+    if (lookupError) throw lookupError
+    if (existing?.length) return false
+
+    const { error: insertError } = await supabase.from('notifications').insert({
+      user_id: input.userId,
+      contest_id: input.contestId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+    })
+    if (insertError) throw insertError
+    return true
+  }
+
+  // 1. Entry closure reveals the brief. Capacity may close entry early, but it
+  // never changes the fixed submission deadline.
+  const { data: activeContests, error: activeError } = await supabase
     .from('contests_with_counts')
     .select('*')
     .eq('status', 'active')
     .not('entry_deadline', 'is', null)
 
-  for (const contest of activeContests ?? []) {
-    const now = new Date()
-    const entryDeadlinePassed = new Date(contest.entry_deadline) < now
-    const effectiveLimit = contest.entry_limit ?? contest.max_entries
-    const entryFull = (contest.entry_count ?? 0) >= effectiveLimit
+  if (activeError) {
+    failures.push('active_contest_scan')
+  } else {
+    for (const contest of activeContests ?? []) {
+      const effectiveLimit = contest.entry_limit ?? contest.max_entries
+      const entryDeadlinePassed = new Date(contest.entry_deadline) <= now
+      const entryFull = (contest.entry_count ?? 0) >= effectiveLimit
+      if (!entryDeadlinePassed && !entryFull) continue
 
-    if (!entryDeadlinePassed && !entryFull) continue
-
-    // Check if we already sent entry_closed notification for this contest
-    const { data: alreadyNotified } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('contest_id', contest.id)
-      .eq('type', 'entry_closed')
-      .limit(1)
-
-    if (alreadyNotified && alreadyNotified.length > 0) continue
-
-    // Entry just closed — fetch all entered participants with profiles
-    const { data: entries } = await supabase
-      .from('contest_entries')
-      .select('contestant_id, profiles(email, full_name)')
-      .eq('contest_id', contest.id)
-
-    if (!entries || entries.length === 0) continue
-
-    // Notify all participants
-    await supabase.from('notifications').insert(
-      entries.map((e: any) => ({
-        user_id: e.contestant_id,
-        type: 'entry_closed',
-        title: 'Brief revealed — start working!',
-        message: `Entry for "${contest.title}" has closed. The full brief and materials are now available. Submit your work before the deadline.`,
-        contest_id: contest.id,
-      }))
-    )
-
-    // Send emails — determine which variant
-    const contestUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://contestic.com'}/contest/${contest.id}`
-    const submissionDeadlineFormatted = new Date(contest.deadline).toLocaleDateString(
-      'en-IN',
-      { day: 'numeric', month: 'long', year: 'numeric' }
-    )
-
-    // Fetch lister profile for lister notification
-    const { data: listerProfile } = await supabase
-      .from('profiles')
-      .select('email, full_name')
-      .eq('id', contest.lister_id)
-      .single()
-
-    if (entryFull) {
-      // Slots filled before time
-      await Promise.allSettled(
-        entries.map((e: any) => {
-          const email = e.profiles?.email
-          if (!email) return Promise.resolve()
-          return sendEmail(
-            email,
-            `All spots filled — "${contest.title}" brief is now live`,
-            entryClosedFullEmail(
-              e.profiles?.full_name ?? 'there',
-              contest.title,
-              effectiveLimit,
-              contestUrl,
-              submissionDeadlineFormatted
-            )
-          )
-        })
-      )
-
-      // Notify lister
-      if (listerProfile?.email) {
-        void sendEmail(
-          listerProfile.email,
-          `Your contest is full — all ${effectiveLimit} spots taken`,
-          base(`
-            <p style="color:#374151;font-size:15px;line-height:1.6;">Hi ${listerProfile.full_name ?? 'there'},</p>
-            <p style="color:#374151;font-size:15px;line-height:1.6;">
-              All <strong>${effectiveLimit} spots</strong> for 
-              <strong>"${contest.title}"</strong> have been filled. 
-              The submission window is now open for all participants.
-            </p>
-            ${btn('View Contest', process.env.NEXT_PUBLIC_APP_URL + '/dashboard/lister')}
-          `)
-        )
-      }
-    } else {
-      // Time expired with partial slots
-      await Promise.allSettled(
-        entries.map((e: any) => {
-          const email = e.profiles?.email
-          if (!email) return Promise.resolve()
-          return sendEmail(
-            email,
-            `Brief revealed — "${contest.title}" submission window is open`,
-            entryClosedTimeEmail(
-              e.profiles?.full_name ?? 'there',
-              contest.title,
-              contest.entry_count ?? 0,
-              effectiveLimit,
-              contestUrl,
-              submissionDeadlineFormatted
-            )
-          )
-        })
-      )
-
-      // Notify lister
-      if (listerProfile?.email) {
-        void sendEmail(
-          listerProfile.email,
-          `Entry period ended — ${contest.entry_count ?? 0} participants registered`,
-          base(`
-            <p style="color:#374151;font-size:15px;line-height:1.6;">Hi ${listerProfile.full_name ?? 'there'},</p>
-            <p style="color:#374151;font-size:15px;line-height:1.6;">
-              The entry period for <strong>"${contest.title}"</strong> 
-              has ended. <strong>${contest.entry_count ?? 0} out of 
-              ${effectiveLimit}</strong> spots were filled.
-            </p>
-            <p style="color:#374151;font-size:15px;line-height:1.6;">
-              All registered participants have been notified and 
-              the submission window is now open.
-            </p>
-            ${btn('View Contest', process.env.NEXT_PUBLIC_APP_URL + '/dashboard/lister')}
-          `)
-        )
-      }
-    }
-
-    counts.entry_closed_notified++
-    console.log(
-      '[Cron] Entry closed, participants notified:',
-      contest.id,
-      entries.length
-    )
-  }
-
-  // ═══════════════════════════════════════
-  // TASK 2 — HANDLE EXPIRED ACTIVE CONTESTS (SUBMISSION DEADLINE)
-  // ═══════════════════════════════════════
-  const { data: expiredContests } = await supabase
-    .from('contests_with_counts')
-    .select('*')
-    .eq('status', 'active')
-    .lt('deadline', new Date().toISOString())
-
-  for (const contest of expiredContests ?? []) {
-    const hasActivity =
-      (contest.submission_count ?? 0) > 0 || (contest.entry_count ?? 0) > 0
-
-    if (!hasActivity) {
-      // ZERO entries AND zero submissions → refund lister
       try {
-        const { data: payment } = await supabase
-          .from('payments')
-          .select('razorpay_payment_id, amount')
+        const { data: entries, error: entriesError } = await supabase
+          .from('contest_entries')
+          .select('contestant_id, profiles(email, full_name)')
           .eq('contest_id', contest.id)
-          .single()
+        if (entriesError) throw entriesError
 
-        if (!payment?.razorpay_payment_id) {
-          console.error('[Cron] No payment found for contest:', contest.id)
-          continue
+        const deadline = formatDateTime(contest.deadline)
+        for (const entry of entries ?? []) {
+          await ensureNotification({
+            userId: entry.contestant_id,
+            contestId: contest.id,
+            type: 'entry_closed',
+            title: 'Submission window open',
+            message: `Entry for "${contest.title}" has closed. The full brief and materials are now available.`,
+          })
+
+          const profile = normalizeProfile(entry.profiles)
+          if (!profile?.email) continue
+          await enqueueEmail({
+            idempotencyKey: `submission-open/${contest.id}/${entry.contestant_id}`,
+            eventType: 'submission_open',
+            contestId: contest.id,
+            userId: entry.contestant_id,
+            to: profile.email,
+            payload: {
+              participantName: profile.full_name ?? 'there',
+              contestTitle: contest.title,
+              totalSlots: effectiveLimit,
+              entryCount: contest.entry_count ?? 0,
+              openedEarly: String(entryFull),
+              contestUrl: `${appUrl}/contest/${contest.id}`,
+              submissionDeadline: deadline,
+            },
+          })
         }
 
-        const authHeaderRazorpay =
-          'Basic ' +
-          Buffer.from(
-            `${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`
-          ).toString('base64')
-
-        const refundRes = await fetch(
-          `https://api.razorpay.com/v1/payments/${payment.razorpay_payment_id}/refund`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: authHeaderRazorpay,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              amount: payment.amount,
-              notes: { reason: 'no_participants_or_submissions' },
-            }),
-          }
-        )
-        const refund = await refundRes.json()
-        if (!refund.id)
-          throw new Error(`Refund failed: ${JSON.stringify(refund)}`)
-
-        await supabase
-          .from('contests')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-          .eq('id', contest.id)
-
-        await supabase
-          .from('payments')
-          .update({ payment_status: 'refunded' })
-          .eq('contest_id', contest.id)
-
-        // Clean up chat messages for cancelled contest
-        await supabase
-          .from('messages')
-          .delete()
-          .eq('contest_id', contest.id)
-
-        const refundAmountFormatted = (payment.amount / 100).toLocaleString(
-          'en-IN'
-        )
-        await supabase.from('notifications').insert({
-          user_id: contest.lister_id,
-          type: 'auto_refund',
-          title: 'Contest cancelled — full refund initiated',
-          message: `"${contest.title}" received no participants and has been cancelled. Your refund of ₹${refundAmountFormatted} has been initiated (5-7 business days).`,
-          contest_id: contest.id,
-        })
-
-        // Send refund email to lister
-        const { data: refundLister } = await supabase
+        const { data: lister } = await supabase
           .from('profiles')
           .select('email, full_name')
           .eq('id', contest.lister_id)
           .single()
-
-        if (refundLister?.email) {
-          void sendEmail(
-            refundLister.email,
-            `Contest cancelled — refund initiated for "${contest.title}"`,
-            autoRefundEmail(
-              refundLister.full_name ?? 'there',
-              contest.title,
-              formatINR(payment.amount)
-            )
-          )
+        if (lister?.email) {
+          await enqueueEmail({
+            idempotencyKey: `entry-closed-lister/${contest.id}/${contest.lister_id}`,
+            eventType: 'entry_closed_lister',
+            contestId: contest.id,
+            userId: contest.lister_id,
+            to: lister.email,
+            payload: {
+              listerName: lister.full_name ?? 'there',
+              contestTitle: contest.title,
+              entryCount: contest.entry_count ?? 0,
+              openedEarly: String(entryFull),
+              reviewUrl: `${appUrl}/dashboard/lister/contest/${contest.id}`,
+            },
+          })
         }
-
-        counts.refunded_empty++
-        console.log('[Cron] Refunded empty contest:', contest.id)
-
-        // Clean up R2 submission files
-        try {
-          await deleteContestFolder(contest.id)
-          console.log('[R2] Files deleted for cancelled contest:', contest.id)
-        } catch (r2Err) {
-          console.error('[R2] Failed to delete files for contest:', contest.id, r2Err)
-        }
+        counts.entry_closed_notified++
       } catch (error) {
-        console.error('[Cron] Refund failed for contest:', contest.id, error)
-        // Do not update status — retry next cron run
+        console.error('[Cron] Entry-close reconciliation failed:', contest.id, error)
+        failures.push(`entry_close:${contest.id}`)
       }
-    } else {
-      // Has entries or submissions → move to judging, NO refund ever
-      await supabase
-        .from('contests')
-        .update({ status: 'judging', updated_at: new Date().toISOString() })
-        .eq('id', contest.id)
-
-      await supabase.from('notifications').insert({
-        user_id: contest.lister_id,
-        type: 'deadline_passed',
-        title: 'Submission deadline passed',
-        message: `"${contest.title}" has ${contest.submission_count ?? 0} submission(s). Review them and pick a winner.`,
-        contest_id: contest.id,
-      })
-
-      counts.moved_to_judging++
-      console.log(
-        '[Cron] Moved to judging:',
-        contest.id,
-        'submissions:',
-        contest.submission_count
-      )
     }
   }
 
-  // ═══════════════════════════════════════
-  // TASK 3 — LISTER REMINDERS (JUDGING, NO WINNER)
-  // ═══════════════════════════════════════
-  const { data: judgingContests } = await supabase
+  // 2. The fixed submission deadline either opens judging or triggers the
+  // already-approved full refund when there are zero submissions.
+  const { data: expiredContests, error: expiredError } = await supabase
+    .from('contests_with_counts')
+    .select('*')
+    .eq('status', 'active')
+    .lte('deadline', nowIso)
+
+  if (expiredError) {
+    failures.push('expired_contest_scan')
+  } else {
+    for (const contest of expiredContests ?? []) {
+      const hasSubmissions = (contest.submission_count ?? 0) > 0
+
+      if (hasSubmissions) {
+        const { data: transitioned, error: transitionError } = await supabase
+          .from('contests')
+          .update({ status: 'judging', updated_at: contest.deadline })
+          .eq('id', contest.id)
+          .eq('status', 'active')
+          .lte('deadline', nowIso)
+          .select('id')
+          .maybeSingle()
+
+        if (transitionError) {
+          failures.push(`judging_transition:${contest.id}`)
+        } else if (transitioned) {
+          counts.moved_to_judging++
+        }
+        continue
+      }
+
+      try {
+        const { data: payment, error: paymentError } = await supabase
+          .from('payments')
+          .select('id, razorpay_payment_id, amount, payment_status')
+          .eq('contest_id', contest.id)
+          .single()
+        if (paymentError || !payment?.razorpay_payment_id) {
+          throw paymentError || new Error('Refundable payment was not found')
+        }
+
+        if (payment.payment_status !== 'refunded') {
+          if (payment.payment_status !== 'captured') {
+            throw new Error('Payment is not in a refundable state')
+          }
+          const refund = await createIdempotentFullRefund({
+            paymentId: payment.razorpay_payment_id,
+            amount: payment.amount,
+            idempotencyKey: `contest_${contest.id}_full_refund`,
+            reason: 'no_submissions',
+          })
+          if (refund.status !== 'processed') {
+            throw new Error('Razorpay refund is still pending')
+          }
+
+          const { error: paymentUpdateError } = await supabase
+            .from('payments')
+            .update({ payment_status: 'refunded' })
+            .eq('id', payment.id)
+            .eq('payment_status', 'captured')
+          if (paymentUpdateError) throw paymentUpdateError
+        }
+
+        const { data: transitioned, error: contestUpdateError } = await supabase
+          .from('contests')
+          .update({ status: 'cancelled', updated_at: contest.deadline })
+          .eq('id', contest.id)
+          .eq('status', 'active')
+          .lte('deadline', nowIso)
+          .select('id')
+          .maybeSingle()
+        if (contestUpdateError) throw contestUpdateError
+
+        await ensureNotification({
+          userId: contest.lister_id,
+          contestId: contest.id,
+          type: 'auto_refund',
+          title: 'Contest closed - full refund initiated',
+          message: `"${contest.title}" received no submissions. Your full payment refund has been initiated.`,
+        })
+
+        const { data: lister } = await supabase
+          .from('profiles')
+          .select('email, full_name')
+          .eq('id', contest.lister_id)
+          .single()
+        if (lister?.email) {
+          await enqueueEmail({
+            idempotencyKey: `empty-contest-refund/${contest.id}/${contest.lister_id}`,
+            eventType: 'empty_contest_refund',
+            contestId: contest.id,
+            userId: contest.lister_id,
+            to: lister.email,
+            payload: {
+              listerName: lister.full_name ?? 'there',
+              contestTitle: contest.title,
+              refundAmount: formatINR(payment.amount),
+              reason: (contest.entry_count ?? 0) === 0
+                ? 'no_entries'
+                : 'no_submissions',
+            },
+          })
+        }
+
+        if (transitioned) counts.refunded_empty++
+        await supabase.from('messages').delete().eq('contest_id', contest.id)
+        try {
+          await deleteContestFolder(contest.id)
+        } catch (r2Error) {
+          console.error('[Cron] Cancelled-contest file cleanup failed:', contest.id, r2Error)
+        }
+      } catch (error) {
+        console.error('[Cron] Empty-contest refund failed:', contest.id, error)
+        failures.push(`refund:${contest.id}`)
+      }
+    }
+  }
+
+  // 3. Reconcile judging notifications and the single three-day admin alert.
+  const { data: judgingContests, error: judgingError } = await supabase
     .from('contests_with_counts')
     .select('*')
     .eq('status', 'judging')
     .is('winner_submission_id', null)
 
-  for (const contest of judgingContests ?? []) {
-    const updatedAt = new Date(contest.updated_at)
-    const daysInJudging = Math.floor(
-      (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24)
-    )
+  if (judgingError) {
+    failures.push('judging_scan')
+  } else {
+    for (const contest of judgingContests ?? []) {
+      try {
+        const { data: lister } = await supabase
+          .from('profiles')
+          .select('email, full_name')
+          .eq('id', contest.lister_id)
+          .single()
 
-    const shouldRemind = [3, 7, 14].includes(daysInJudging)
-    if (!shouldRemind) continue
+        await ensureNotification({
+          userId: contest.lister_id,
+          contestId: contest.id,
+          type: 'deadline_passed',
+          title: 'Submissions ready for review',
+          message: `"${contest.title}" has ${contest.submission_count ?? 0} submission(s). Review them and select a winner.`,
+        })
 
-    // Check if we already sent a reminder today
-    const today = new Date().toISOString().split('T')[0]
-    const { data: recentReminder } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('contest_id', contest.id)
-      .eq('type', 'judging_reminder')
-      .gte('created_at', today)
-      .limit(1)
+        if (lister?.email) {
+          const queued = await enqueueEmail({
+            idempotencyKey: `judging-open/${contest.id}/${contest.lister_id}`,
+            eventType: 'judging_open',
+            contestId: contest.id,
+            userId: contest.lister_id,
+            to: lister.email,
+            payload: {
+              listerName: lister.full_name ?? 'there',
+              contestTitle: contest.title,
+              submissionCount: contest.submission_count ?? 0,
+              reviewUrl: `${appUrl}/dashboard/lister/contest/${contest.id}`,
+            },
+          })
+          if (queued) counts.judging_emails_queued++
+        }
 
-    if (recentReminder && recentReminder.length > 0) continue
+        const judgingStartedAt = new Date(contest.updated_at)
+        const daysInJudging = Math.floor(
+          (now.getTime() - judgingStartedAt.getTime()) / (24 * 60 * 60 * 1000)
+        )
 
-    const urgency = daysInJudging === 14 ? 'Urgent: ' : ''
-    await supabase.from('notifications').insert({
-      user_id: contest.lister_id,
-      type: 'judging_reminder',
-      title: `${urgency}Pick a winner for "${contest.title}"`,
-      message: `${daysInJudging} days have passed. ${contest.submission_count ?? 0} submission(s) are waiting for your decision.`,
-      contest_id: contest.id,
-    })
+        if (daysInJudging >= 3 && adminEmail) {
+          const queued = await enqueueEmail({
+            idempotencyKey: `admin-judging-overdue/${contest.id}`,
+            eventType: 'admin_judging_overdue',
+            contestId: contest.id,
+            to: adminEmail,
+            payload: {
+              contestTitle: contest.title,
+              contestId: contest.id,
+              submissionCount: contest.submission_count ?? 0,
+              payoutUrl: `${appUrl}/admin/payouts`,
+            },
+          })
+          if (queued) counts.overdue_admin_alerts_queued++
+        }
 
-    counts.reminders_sent++
-    console.log(
-      '[Cron] Reminder sent to lister:',
-      contest.lister_id,
-      'days:',
-      daysInJudging
-    )
+        if ([3, 7, 14].includes(daysInJudging)) {
+          const created = await ensureNotification({
+            userId: contest.lister_id,
+            contestId: contest.id,
+            type: `judging_reminder_${daysInJudging}`,
+            title: `Select a winner for "${contest.title}"`,
+            message: `${daysInJudging} days have passed. ${contest.submission_count ?? 0} submission(s) are awaiting your decision.`,
+          })
+          if (created) counts.reminders_sent++
+        }
+      } catch (error) {
+        console.error('[Cron] Judging reconciliation failed:', contest.id, error)
+        failures.push(`judging:${contest.id}`)
+      }
+    }
   }
 
-  // ═══════════════════════════════════════
-  // TASK 4 — AUTO-CLOSE FULL SUBMISSION CONTESTS
-  // ═══════════════════════════════════════
-  const { data: fullContests } = await supabase
-    .from('contests_with_counts')
-    .select('*')
-    .eq('status', 'active')
+  // 4. Reconcile winner-result and admin-payout emails even if the request that
+  // selected the winner ended after the database transaction committed.
+  const { data: completedContests, error: completedError } = await supabase
+    .from('contests')
+    .select('id, title, prize_amount, winner_submission_id')
+    .eq('status', 'completed')
+    .not('winner_submission_id', 'is', null)
 
-  for (const contest of fullContests ?? []) {
-    const effectiveLimit = contest.max_entries
-    if ((contest.submission_count ?? 0) < effectiveLimit) continue
+  if (completedError) {
+    failures.push('completed_contest_scan')
+  } else {
+    for (const contest of completedContests ?? []) {
+      try {
+        const { data: winnerSubmission, error: winnerError } = await supabase
+          .from('submissions')
+          .select('contestant_id, profiles(email, full_name)')
+          .eq('id', contest.winner_submission_id)
+          .single()
+        if (winnerError || !winnerSubmission) throw winnerError
 
-    // Verify entry phase is actually over before closing submissions
-    const now = new Date()
-    const entryOpen = contest.entry_deadline
-      ? now < new Date(contest.entry_deadline)
-      : false
-    if (entryOpen) continue
+        const winnerProfile = normalizeProfile(winnerSubmission.profiles)
+        const prize = formatINR(contest.prize_amount)
+        if (winnerProfile?.email) {
+          await enqueueEmail({
+            idempotencyKey: `winner-selected/${contest.id}/${winnerSubmission.contestant_id}`,
+            eventType: 'winner_selected',
+            contestId: contest.id,
+            userId: winnerSubmission.contestant_id,
+            to: winnerProfile.email,
+            payload: {
+              winnerName: winnerProfile.full_name ?? 'there',
+              contestTitle: contest.title,
+              prizeFormatted: prize,
+              dashboardUrl: `${appUrl}/dashboard/contestant`,
+            },
+          })
+        }
 
-    await supabase
-      .from('contests')
-      .update({ status: 'judging', updated_at: now.toISOString() })
-      .eq('id', contest.id)
+        const { data: entrants, error: entrantsError } = await supabase
+          .from('contest_entries')
+          .select('contestant_id, profiles(email, full_name)')
+          .eq('contest_id', contest.id)
+        if (entrantsError) throw entrantsError
 
-    await supabase.from('notifications').insert({
-      user_id: contest.lister_id,
-      type: 'contest_full',
-      title: 'Contest full — pick a winner',
-      message: `All ${contest.submission_count} submission slots for "${contest.title}" are filled. Review and pick a winner.`,
-      contest_id: contest.id,
-    })
+        for (const entrant of entrants ?? []) {
+          if (entrant.contestant_id === winnerSubmission.contestant_id) continue
+          const profile = normalizeProfile(entrant.profiles)
+          if (!profile?.email) continue
+          await enqueueEmail({
+            idempotencyKey: `winner-not-selected/${contest.id}/${entrant.contestant_id}`,
+            eventType: 'winner_not_selected',
+            contestId: contest.id,
+            userId: entrant.contestant_id,
+            to: profile.email,
+            payload: {
+              participantName: profile.full_name ?? 'there',
+              contestTitle: contest.title,
+              browseUrl: appUrl,
+            },
+          })
+        }
 
-    console.log('[Cron] Full contest moved to judging:', contest.id)
+        if (adminEmail) {
+          await enqueueEmail({
+            idempotencyKey: `admin-payout-required/${contest.id}`,
+            eventType: 'admin_payout_required',
+            contestId: contest.id,
+            to: adminEmail,
+            payload: {
+              contestTitle: contest.title,
+              winnerName: winnerProfile?.full_name ?? 'Unknown',
+              winnerEmail: winnerProfile?.email ?? 'Unavailable',
+              prizeFormatted: prize,
+              contestId: contest.id,
+              payoutUrl: `${appUrl}/admin/payouts`,
+            },
+          })
+        }
+        counts.winner_emails_reconciled++
+      } catch (error) {
+        console.error('[Cron] Winner email reconciliation failed:', contest.id, error)
+        failures.push(`winner_email:${contest.id}`)
+      }
+    }
   }
 
-  // ═══════════════════════════════════════
-  // TASK 5 — REMIND WINNERS AWAITING UPI
-  // ═══════════════════════════════════════
-  const { data: awaitingUpi } = await supabase
+  // 5. Reconcile payment-confirmation emails with the stored UTR/reference.
+  const { data: transferredPayouts, error: payoutError } = await supabase
     .from('payout_requests')
-    .select('*, contests(title, prize_amount)')
+    .select('id, contest_id, contest_title, winner_id, winner_name, winner_email, winner_upi, amount, admin_note, status')
+    .eq('status', 'transferred')
+    .not('admin_note', 'is', null)
+
+  if (payoutError) {
+    failures.push('transferred_payout_scan')
+  } else {
+    for (const payout of transferredPayouts ?? []) {
+      const winnerUpi = payout.winner_upi || ''
+      const maskedUpi = winnerUpi.length > 6
+        ? `${winnerUpi.slice(0, 3)}****${winnerUpi.slice(-3)}`
+        : 'your saved UPI ID'
+      const queued = await enqueueEmail({
+        idempotencyKey: `payout-transferred/${payout.contest_id}/${payout.id}`,
+        eventType: 'payout_transferred',
+        contestId: payout.contest_id,
+        userId: payout.winner_id,
+        to: payout.winner_email,
+        payload: {
+          winnerName: payout.winner_name || 'there',
+          contestTitle: payout.contest_title,
+          prizeFormatted: formatINR(payout.amount),
+          maskedUpi,
+          transferReference: payout.admin_note,
+        },
+      })
+      if (queued) counts.payout_emails_reconciled++
+    }
+  }
+
+  // 6. Keep the existing in-app UPI reminder, at most once per calendar day.
+  const { data: awaitingUpi, error: upiError } = await supabase
+    .from('payout_requests')
+    .select('contest_id, winner_id, amount, contest_title')
     .eq('status', 'awaiting_upi')
 
-  for (const pr of awaitingUpi ?? []) {
-    // Only remind once per day max
-    const today = new Date().toISOString().split('T')[0]
-    const { data: recentReminder } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('user_id', pr.winner_id)
-      .eq('type', 'upi_reminder')
-      .eq('contest_id', pr.contest_id)
-      .gte('created_at', today)
-      .limit(1)
+  if (upiError) {
+    failures.push('upi_reminder_scan')
+  } else {
+    const today = nowIso.slice(0, 10)
+    for (const payout of awaitingUpi ?? []) {
+      const { data: recent } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', payout.winner_id)
+        .eq('contest_id', payout.contest_id)
+        .eq('type', 'upi_reminder')
+        .gte('created_at', today)
+        .limit(1)
+      if (recent?.length) continue
 
-    if (recentReminder && recentReminder.length > 0) continue
-
-    const contestTitle = pr.contests?.title || 'your contest'
-    const prizeAmount = pr.contests?.prize_amount || 0
-    const amountFormatted = (prizeAmount / 100).toLocaleString('en-IN')
-
-    await supabase.from('notifications').insert({
-      user_id: pr.winner_id,
-      type: 'upi_reminder',
-      title: 'Add your UPI to receive your prize',
-      message: `Your prize of ₹${amountFormatted} for "${contestTitle}" is waiting. Add your UPI ID to receive it.`,
-      contest_id: pr.contest_id,
-    })
-
-    counts.upi_reminders_sent++
+      const { error } = await supabase.from('notifications').insert({
+        user_id: payout.winner_id,
+        contest_id: payout.contest_id,
+        type: 'upi_reminder',
+        title: 'Add your UPI ID to receive your prize',
+        message: `Your prize of ${formatINR(payout.amount)} for "${payout.contest_title}" is waiting for your UPI ID.`,
+      })
+      if (!error) counts.upi_reminders_sent++
+    }
   }
 
-  return Response.json({
-    success: true,
+  // 7. Retry only cleanup jobs explicitly scheduled by a successful winner
+  // selection. Existing completed contests retain the default not_required
+  // state and are never picked up retroactively.
+  const { data: pendingCleanups, error: cleanupScanError } = await supabase
+    .from('contests')
+    .select('id')
+    .eq('status', 'completed')
+    .eq('submission_cleanup_status', 'pending')
+    .order('updated_at', { ascending: true })
+    .limit(25)
+
+  if (cleanupScanError) {
+    failures.push('submission_cleanup_scan')
+  } else {
+    for (const contest of pendingCleanups ?? []) {
+      try {
+        await completeContestSubmissionCleanup(contest.id)
+        counts.submission_cleanups_completed++
+      } catch (error) {
+        console.error(
+          '[Cron] Submission cleanup remains pending:',
+          contest.id,
+          error
+        )
+        failures.push(`submission_cleanup:${contest.id}`)
+      }
+    }
+  }
+
+  // 8. Chat is inaccessible immediately after completion but retained for the
+  // approved 90-day dispute window. Purge in small batches to keep cron load
+  // bounded even as the number of contests grows.
+  const { data: dueChatPurges, error: chatPurgeScanError } = await supabase
+    .from('contests')
+    .select('id')
+    .eq('status', 'completed')
+    .lte('chat_purge_after', nowIso)
+    .is('chat_purged_at', null)
+    .order('chat_purge_after', { ascending: true })
+    .limit(25)
+
+  if (chatPurgeScanError) {
+    failures.push('chat_purge_scan')
+  } else {
+    for (const contest of dueChatPurges ?? []) {
+      const { error: deleteError } = await supabase
+        .from('messages')
+        .delete()
+        .eq('contest_id', contest.id)
+
+      if (deleteError) {
+        failures.push(`chat_purge:${contest.id}`)
+        continue
+      }
+
+      const { error: markError } = await supabase
+        .from('contests')
+        .update({ chat_purged_at: nowIso })
+        .eq('id', contest.id)
+        .is('chat_purged_at', null)
+
+      if (markError) {
+        failures.push(`chat_purge_mark:${contest.id}`)
+        continue
+      }
+      counts.chat_histories_purged++
+    }
+  }
+
+  const emailDelivery = await deliverPendingEmails(25)
+  if (emailDelivery.claimFailed || emailDelivery.failed > 0) {
+    failures.push('email_delivery')
+  }
+
+  const payload = {
+    success: failures.length === 0,
     ...counts,
+    email_delivery: emailDelivery,
+    failures,
     timestamp: new Date().toISOString(),
-  })
+  }
+
+  return Response.json(payload, { status: failures.length ? 500 : 200 })
 }

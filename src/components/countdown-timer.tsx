@@ -13,7 +13,9 @@ export function CountdownTimer({ deadline }: { deadline: string }) {
   const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
-    setIsMounted(true)
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | undefined
+
     const calculateTimeLeft = () => {
       const diff = new Date(deadline).getTime() - Date.now()
       if (diff <= 0) {
@@ -28,9 +30,7 @@ export function CountdownTimer({ deadline }: { deadline: string }) {
       }
     }
 
-    setTimeLeft(calculateTimeLeft())
-
-    const timer = setInterval(() => {
+    const updateTimeLeft = () => {
       const remaining = calculateTimeLeft()
       setTimeLeft(remaining)
       if (
@@ -39,11 +39,21 @@ export function CountdownTimer({ deadline }: { deadline: string }) {
         remaining.minutes === 0 &&
         remaining.seconds === 0
       ) {
-        clearInterval(timer)
+        if (timer) clearInterval(timer)
       }
-    }, 1000)
+    }
 
-    return () => clearInterval(timer)
+    queueMicrotask(() => {
+      if (cancelled) return
+      setIsMounted(true)
+      updateTimeLeft()
+      timer = setInterval(updateTimeLeft, 1000)
+    })
+
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+    }
   }, [deadline])
 
   if (!isMounted) return null

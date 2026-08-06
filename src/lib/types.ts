@@ -5,11 +5,20 @@ export type SubmissionStatus = 'submitted' | 'winner' | 'not_selected'
 export type PaymentStatus = 'pending' | 'captured' | 'failed' | 'refunded'
 export type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
+export interface SubmissionAttachment {
+  type: 'upload' | 'drive_link'
+  filename: string
+  size_bytes: number
+  key?: string
+  url?: string
+}
+
 export interface Profile {
   id: string
   email: string
   full_name: string | null
   avatar_url: string | null
+  bio: string | null
   upi_id: string | null
   created_at: string
 }
@@ -41,12 +50,27 @@ export interface Contest {
   entry_count?: number
 }
 
+export type VisibleContest = Omit<
+  Contest,
+  | 'description'
+  | 'platform_fee'
+  | 'total_charged'
+  | 'razorpay_order_id'
+  | 'razorpay_payment_id'
+  | 'profiles'
+> & {
+  description: string | null
+  lister_name: string | null
+  lister_avatar: string | null
+  profiles?: Pick<Profile, 'id' | 'full_name' | 'avatar_url'>
+}
+
 export interface Submission {
   id: string
   contest_id: string
   contestant_id: string
   content: string
-  file_url: string | null
+  file_urls: SubmissionAttachment[]
   status: SubmissionStatus
   submitted_at: string
   profiles?: Profile
@@ -80,8 +104,44 @@ export interface ContestFormData {
   materials: Array<{ type: 'link' | 'text'; label: string; content: string }>
 }
 
+export interface RazorpayCheckoutResponse {
+  razorpay_payment_id: string
+  razorpay_order_id: string
+  razorpay_signature: string
+}
+
+export interface RazorpayCheckoutOptions {
+  key: string
+  amount: number
+  currency: string
+  name: string
+  description: string
+  order_id: string
+  handler: (response: RazorpayCheckoutResponse) => void | Promise<void>
+  prefill?: {
+    name?: string
+    email?: string
+    contact?: string
+  }
+  theme?: {
+    color?: string
+  }
+  modal?: {
+    ondismiss?: () => void
+  }
+}
+
+export interface RazorpayCheckoutInstance {
+  open(): void
+  close(): void
+}
+
+export interface RazorpayCheckoutConstructor {
+  new (options: RazorpayCheckoutOptions): RazorpayCheckoutInstance
+}
+
 declare global {
   interface Window {
-    Razorpay: any
+    Razorpay: RazorpayCheckoutConstructor
   }
 }

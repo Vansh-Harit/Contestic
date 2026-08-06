@@ -14,22 +14,24 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, avatar_url, email')
+    .select('full_name, avatar_url, email, bio')
     .eq('id', user.id)
     .single()
 
   return (
-    <main className="max-w-2xl mx-auto w-full px-container-padding-mobile md:px-container-padding-desktop py-12 flex-1 font-sans">
-      <h1 className="text-headline-lg font-heading font-bold text-on-surface mb-2">
+    <main className="mx-auto w-full max-w-3xl flex-1 px-container-padding-mobile py-10 font-sans md:px-container-padding-desktop md:py-12">
+      <h1 className="font-heading text-3xl font-bold text-on-surface">
         Settings
       </h1>
-      <p className="text-body-md text-secondary mb-10">
-        Manage your profile and account preferences
+      <p className="mb-8 mt-1 text-sm text-secondary">
+        Manage your public profile and private account information.
       </p>
       <SettingsClient
         profile={{
+          id: user.id,
           fullName: profile?.full_name ?? '',
           avatarUrl: profile?.avatar_url ?? null,
+          bio: profile?.bio ?? '',
           email: user.email ?? '',
         }}
       />

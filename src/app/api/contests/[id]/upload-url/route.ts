@@ -1,5 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUploadUrl, getPublicUrl } from '@/lib/r2'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getUploadUrl } from '@/lib/r2'
+import {
+  getAuthorizationStage,
+} from '@/lib/authorization'
+import { submissionDownloadPath } from '@/lib/submission-files'
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -25,6 +30,8 @@ export async function POST(
   if (!user) {
     return Response.json({ error: 'Authentication required' }, { status: 401 })
   }
+
+  const admin = createAdminClient()
 
   // 2. Parse body
   let body: { filename?: string; contentType?: string; fileSize?: number }
@@ -68,9 +75,9 @@ export async function POST(
   }
 
   // 5. Verify user can submit to this contest
-  const { data: contest } = await supabase
+  const { data: contest } = await admin
     .from('contests')
-    .select('id, lister_id, status, deadline, entry_deadline')
+    .select('id, lister_id, status, deadline, entry_deadline, entry_limit, max_entries')
     .eq('id', contestId)
     .single()
 
@@ -96,6 +103,33 @@ export async function POST(
     return Response.json(
       { error: 'Cannot submit to own contest' },
       { status: 403 }
+    )
+  }
+
+  const { count: entryCount, error: entryCountError } = await admin
+    .from('contest_entries')
+    .select('*', { count: 'exact', head: true })
+    .eq('contest_id', contestId)
+
+  if (entryCountError || entryCount === null) {
+    return Response.json(
+      { error: 'Failed to verify submission phase' },
+      { status: 500 }
+    )
+  }
+
+  const stage = getAuthorizationStage({
+    status: contest.status,
+    entryDeadline: contest.entry_deadline,
+    deadline: contest.deadline,
+    entryCount,
+    entryLimit: contest.entry_limit ?? contest.max_entries,
+  })
+
+  if (stage !== 'submission_open') {
+    return Response.json(
+      { error: 'Submission window has not opened' },
+      { status: 400 }
     )
   }
 
@@ -144,7 +178,7 @@ export async function POST(
   // 8. Return
   return Response.json({
     uploadUrl,
-    publicUrl: getPublicUrl(key),
     key,
+    downloadUrl: submissionDownloadPath(contestId, key),
   })
 }

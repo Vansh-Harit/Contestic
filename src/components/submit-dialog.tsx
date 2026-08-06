@@ -17,6 +17,7 @@ import toast from 'react-hot-toast'
 interface AttachedFile {
   type: 'upload' | 'drive_link'
   url: string
+  key?: string
   filename: string
   size_bytes: number
 }
@@ -103,7 +104,7 @@ export function SubmitDialog({
         return
       }
 
-      const { uploadUrl, publicUrl } = await res.json()
+      const { uploadUrl, downloadUrl, key } = await res.json()
 
       // Upload directly to R2 using XMLHttpRequest to track progress
       await new Promise<void>((resolve, reject) => {
@@ -132,7 +133,8 @@ export function SubmitDialog({
 
       setAttachedFiles(prev => [...prev, {
         type: 'upload',
-        url: publicUrl,
+        url: downloadUrl,
+        key,
         filename: selectedFile.name,
         size_bytes: selectedFile.size,
       }])
@@ -142,7 +144,7 @@ export function SubmitDialog({
       const fileInput = document.getElementById('file-upload-input') as HTMLInputElement
       if (fileInput) fileInput.value = ''
       toast.success('File uploaded')
-    } catch (err) {
+    } catch {
       toast.error('Upload failed. Please try again.')
     } finally {
       setUploading(false)
@@ -229,7 +231,7 @@ export function SubmitDialog({
         const err = await res.json()
         toast.error(err.error || 'Submission failed')
       }
-    } catch (err) {
+    } catch {
       toast.error('An unexpected error occurred')
     } finally {
       setIsSubmitting(false)
@@ -238,24 +240,24 @@ export function SubmitDialog({
 
   return (
     <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-      <DialogContent className="sm:max-w-2xl bg-surface-container-lowest border-outline-variant font-sans max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-outline-variant bg-white font-sans sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-headline-sm font-heading font-bold text-on-surface">
-            Submit Your Entry
+          <DialogTitle className="font-heading text-2xl font-bold text-on-surface">
+            Submit your entry
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 pt-4">
+        <div className="space-y-5 pt-3">
           {/* Text Description */}
           <div className="space-y-2">
             <Label className="text-label-caps uppercase tracking-wider text-secondary font-bold text-xs">
-              Your Submission (Optional)
+              Submission description (optional)
             </Label>
             <Textarea
-              placeholder="Describe about your creative work"
+              placeholder="Describe your creative work"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="min-h-[180px] resize-y bg-transparent border-outline-variant focus:border-primary-container"
+              className="min-h-[130px] resize-y border-outline-variant bg-white focus:border-primary-container"
             />
             <div className="flex justify-between text-xs font-semibold">
               <span
@@ -283,7 +285,7 @@ export function SubmitDialog({
           </div>
 
           {/* Tab Switcher */}
-          <div className="flex gap-1 bg-surface-container rounded-lg p-1">
+          <div className="flex gap-1 rounded-lg border border-outline-variant bg-gray-50 p-1">
             <button
               type="button"
               onClick={() => setActiveTab('upload')}
@@ -294,7 +296,7 @@ export function SubmitDialog({
               }`}
             >
               <Upload className="h-4 w-4" />
-              Upload File
+              Upload file
             </button>
             <button
               type="button"
@@ -306,7 +308,7 @@ export function SubmitDialog({
               }`}
             >
               <Link2 className="h-4 w-4" />
-              Add Drive Link
+              Add Drive link
             </button>
           </div>
 
@@ -315,7 +317,7 @@ export function SubmitDialog({
             <div className="space-y-3">
               <p className="text-xs text-secondary">{getHelperText()}</p>
 
-              <div className="border-2 border-dashed border-outline-variant rounded-lg p-6 text-center hover:border-primary-container transition-colors">
+              <div className="rounded-lg border border-dashed border-outline-variant p-5 text-center transition-colors hover:border-indigo-300">
                 <input
                   id="file-upload-input"
                   type="file"
@@ -471,7 +473,7 @@ export function SubmitDialog({
           )}
 
           {/* AI Policy */}
-          <div className="bg-primary-container/5 border border-primary-container/20 p-4 rounded-lg flex items-start gap-4">
+          <div className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3.5">
             <AlertCircle className="h-5 w-5 text-primary-container shrink-0 mt-0.5" />
             <div>
               <h4 className="text-sm font-bold text-primary mb-1">
@@ -489,7 +491,7 @@ export function SubmitDialog({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-4 pt-4 border-t border-outline-variant">
+          <div className="sticky bottom-0 -mx-6 flex justify-end gap-3 border-t border-outline-variant bg-white/95 px-6 py-4 backdrop-blur-sm">
             <Button
               variant="outline"
               onClick={onClose}
@@ -501,7 +503,7 @@ export function SubmitDialog({
             <Button
               onClick={handleSubmit}
               disabled={!isValid || isSubmitting || uploading}
-              className="bg-primary-container text-on-primary-container font-bold hover:opacity-90 transition-opacity"
+              className="bg-primary-container font-semibold text-white transition-colors hover:bg-indigo-700"
             >
               {isSubmitting ? 'Submitting...' : 'Submit Entry'}
             </Button>

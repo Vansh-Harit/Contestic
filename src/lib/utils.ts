@@ -35,7 +35,10 @@ export const daysUntil = (dateStr: string) => {
 export type ContestPhase = 'entry_open' | 'entry_closed' | 'submission_open' | 'judging' | 'completed' | 'cancelled'
 
 export function getContestPhase(
-  contest: Contest
+  contest: Pick<
+    Contest,
+    'status' | 'entry_deadline' | 'entry_limit' | 'max_entries' | 'entry_count' | 'deadline'
+  >
 ): ContestPhase {
   if (contest.status === 'completed') return 'completed'
   if (contest.status === 'cancelled') return 'cancelled'

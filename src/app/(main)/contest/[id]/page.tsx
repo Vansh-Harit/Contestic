@@ -1,7 +1,11 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getContestPhase } from '@/lib/utils'
+import { canViewPrivateContestContent } from '@/lib/authorization'
+import type { VisibleContest } from '@/lib/types'
 import ContestDetailClient from '@/components/contest-detail-client'
+import type { ContestMaterial } from '@/components/contest-detail-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,15 +13,16 @@ export default async function ContestDetailPage(props: { params: Promise<{ id: s
   const params = await props.params
   const supabase = await createClient()
 
-  const { data: contest } = await supabase
-    .from('contests_with_counts')
-    .select('*, profiles(full_name, avatar_url)')
-    .eq('id', params.id)
+  const { data: contestData } = await supabase
+    .rpc('get_visible_contests', { p_contest_id: params.id })
     .single()
+
+  const contest = contestData as VisibleContest | null
 
   if (!contest || contest.status === 'draft') return notFound()
 
   const { data: { user } } = await supabase.auth.getUser()
+  const admin = createAdminClient()
 
   let hasSubmitted = false
   if (user) {
@@ -46,10 +51,14 @@ export default async function ContestDetailPage(props: { params: Promise<{ id: s
   const phase = getContestPhase(contest)
 
   // Fetch materials ONLY if user has entered AND entry phase is over
-  const canSeeMaterials = hasEntered && phase !== 'entry_open'
-  let materials: any[] = []
+  const canSeeMaterials = !!user && canViewPrivateContestContent({
+    isCreator: contest.lister_id === user.id,
+    hasEntered,
+    stage: phase === 'entry_closed' ? 'submission_open' : phase,
+  })
+  let materials: ContestMaterial[] = []
   if (canSeeMaterials) {
-    const { data } = await supabase
+    const { data } = await admin
       .from('contest_materials')
       .select('*')
       .eq('contest_id', params.id)
