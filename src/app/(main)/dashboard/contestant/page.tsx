@@ -1,6 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ContestantDashboardClient from '@/components/contestant-dashboard-client'
+import type {
+  DashboardContest,
+  DashboardSubmission,
+} from '@/components/contestant-dashboard-client'
 import { getContestPhase } from '@/lib/utils'
 
 export default async function ContestantDashboardPage() {
@@ -8,9 +13,10 @@ export default async function ContestantDashboardPage() {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) redirect('/login')
+  const admin = createAdminClient()
 
   // Fetch all contests the user has entered with submission status
-  const { data: entries, error } = await supabase
+  const { data: entries, error } = await admin
     .from('contest_entries')
     .select(`
       id,
@@ -42,9 +48,9 @@ export default async function ContestantDashboardPage() {
     .filter(Boolean)
 
   // Fetch submissions for all entered contests
-  let submissions: any[] = []
+  let submissions: DashboardSubmission[] = []
   if (contestIds.length > 0) {
-    const { data: subs } = await supabase
+    const { data: subs } = await admin
       .from('submissions')
       .select('id, contest_id, status, content, submitted_at')
       .eq('contestant_id', user.id)
@@ -53,16 +59,16 @@ export default async function ContestantDashboardPage() {
   }
 
   // Fetch payout requests for won contests
-  const { data: payouts } = await supabase
+  const { data: payouts } = await admin
     .from('payout_requests')
     .select('contest_id, status, winner_upi, amount, transferred_at')
     .eq('winner_id', user.id)
   const payoutRequests = payouts ?? []
 
   // Fetch unread messages for the contestant
-  let unreadCounts: Record<string, number> = {}
+  const unreadCounts: Record<string, number> = {}
   if (contestIds.length > 0) {
-    const { data: messagesData } = await supabase
+    const { data: messagesData } = await admin
       .from('messages')
       .select('conversation_id')
       .eq('recipient_id', user.id)
@@ -82,7 +88,7 @@ export default async function ContestantDashboardPage() {
 
   // Build a combined data structure
   const existingContestsWithStatus = (entries ?? []).map(entry => {
-    const contest = entry.contests as any
+    const contest = entry.contests as unknown as DashboardContest
     const submission = submissions.find(s => s.contest_id === entry.contest_id)
     const payout = payoutRequests.find(p => p.contest_id === entry.contest_id)
     const phase = getContestPhase({
@@ -100,7 +106,7 @@ export default async function ContestantDashboardPage() {
     }
   })
 
-  const { data: wonSubmissions } = await supabase
+  const { data: wonSubmissions } = await admin
     .from('submissions')
     .select(`
       id,
@@ -133,7 +139,7 @@ export default async function ContestantDashboardPage() {
   const wonNotInEntries = (wonSubmissions ?? [])
     .filter(s => !enteredContestIds.has(s.contest_id))
     .map(s => {
-      const contest = s.contests as any
+      const contest = s.contests as unknown as DashboardContest
       const payout = payoutRequests.find(
         p => p.contest_id === s.contest_id
       )

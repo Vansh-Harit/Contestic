@@ -15,8 +15,8 @@ export default async function ListerDashboardPage() {
   }
 
   const { data: contests, error: queryError } = await supabase
-    .from('contests_with_counts')
-    .select('*')
+    .from('contests')
+    .select('*, profiles!lister_id(full_name, avatar_url), submissions(count), contest_entries(count)')
     .eq('lister_id', user.id)
     .order('created_at', { ascending: false })
 
@@ -24,14 +24,19 @@ export default async function ListerDashboardPage() {
     console.error('[ListerDashboard] Query failed:', queryError.message)
   }
 
-  const contestList = contests ?? []
+  const contestList = (contests ?? []).map((contest) => ({
+    ...contest,
+    submission_count: contest.submissions?.[0]?.count ?? 0,
+    entry_count: contest.contest_entries?.[0]?.count ?? 0,
+    lister_name: contest.profiles?.full_name ?? null,
+    lister_avatar: contest.profiles?.avatar_url ?? null,
+  }))
 
   console.log('[ListerDashboard] User:', user.id, '| Contests:', contestList.length)
 
   return (
     <ListerDashboardClient 
       contests={contestList} 
-      userId={user.id} 
     />
   )
 }

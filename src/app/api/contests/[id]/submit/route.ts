@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MAX_SUBMISSION_CHARS, MIN_SUBMISSION_CHARS } from '@/lib/constants'
-import { sendEmail } from '@/lib/resend'
-import { base, btn } from '@/lib/email-templates'
+import { deliverPendingEmails, enqueueEmail } from '@/lib/email-delivery'
 import { submitRatelimit } from '@/lib/ratelimit'
+import { normalizeSubmissionAttachments } from '@/lib/submission-files'
 
 export async function POST(
   request: Request,
@@ -21,6 +21,8 @@ export async function POST(
     return Response.json({ error: 'Authentication required' }, { status: 401 })
   }
 
+  const admin = createAdminClient()
+
   // 2. Rate limiting (Upstash Redis — survives cold starts)
   const { success, reset } = await submitRatelimit.limit(user.id)
   if (!success) {
@@ -34,7 +36,7 @@ export async function POST(
   }
 
   // 2. Fetch contest
-  const { data: contest, error: contestError } = await supabase
+  const { data: contest, error: contestError } = await admin
     .from('contests')
     .select('id, lister_id, status, deadline, max_entries, entry_deadline, entry_limit, title')
     .eq('id', contestId)
@@ -93,7 +95,7 @@ export async function POST(
     : null
   const isEntryPhase = entryDeadline && currentTime < entryDeadline
 
-  const { count: entryCount } = await supabase
+  const { count: entryCount } = await admin
     .from('contest_entries')
     .select('*', { count: 'exact', head: true })
     .eq('contest_id', contestId)
@@ -124,7 +126,7 @@ export async function POST(
   }
 
   // 5. Entry limit check
-  const { count: totalSubmissions } = await supabase
+  const { count: totalSubmissions } = await admin
     .from('submissions')
     .select('*', { count: 'exact', head: true })
     .eq('contest_id', contestId)
@@ -137,7 +139,7 @@ export async function POST(
   }
 
   // 6. Validate content
-  let body: { content?: string; file_urls?: any[] }
+  let body: { content?: unknown; file_urls?: unknown }
   try {
     body = await request.json()
   } catch {
@@ -145,7 +147,22 @@ export async function POST(
   }
 
   const content = typeof body.content === 'string' ? body.content.trim() : ''
-  const file_urls = body.file_urls ?? []
+  let fileUrls
+  try {
+    fileUrls = normalizeSubmissionAttachments(
+      contestId,
+      user.id,
+      body.file_urls ?? []
+    )
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof Error ? error.message : 'Invalid file data',
+      },
+      { status: 400 }
+    )
+  }
 
   if (content.length < MIN_SUBMISSION_CHARS) {
     return Response.json(
@@ -161,44 +178,63 @@ export async function POST(
     )
   }
 
-  // 6b. Validate file_urls
-  if (!Array.isArray(file_urls)) {
-    return Response.json({ error: 'Invalid file data' }, { status: 400 })
-  }
-  if (file_urls.length > 10) {
-    return Response.json(
-      { error: 'Maximum 10 attachments per submission' },
-      { status: 400 }
-    )
-  }
-  const totalUploadBytes = file_urls
-    .filter((f: any) => f.type === 'upload')
-    .reduce((sum: number, f: any) => sum + (f.size_bytes ?? 0), 0)
-  if (totalUploadBytes > 20 * 1024 * 1024) {
-    return Response.json(
-      { error: 'Total file size exceeds 20MB limit' },
-      { status: 400 }
-    )
+  // 7. Insert through the service-only database function. The function locks
+  // the contest row and repeats stage, ownership, entry, capacity and duplicate
+  // checks so concurrent requests cannot bypass the route preflight.
+  let { data: submissionId, error: insertError } = await admin.rpc(
+    'create_submission_authorized',
+    {
+      p_contest_id: contestId,
+      p_contestant_id: user.id,
+      p_content: content,
+      p_file_urls: fileUrls,
+    }
+  )
+
+  const rpcMissing =
+    insertError?.code === 'PGRST202' ||
+    insertError?.message?.includes('schema cache')
+
+  // Development-only bridge while the coordinated migration awaits approval.
+  // Production must use the contest-locking function.
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    rpcMissing
+  ) {
+    const fallback = await admin
+      .from('submissions')
+      .insert({
+        contest_id: contestId,
+        contestant_id: user.id,
+        content,
+        file_urls: fileUrls,
+      })
+      .select('id')
+      .single()
+
+    submissionId = fallback.data?.id ?? null
+    insertError = fallback.error
   }
 
-  // 7. Insert submission
-  const { data: submission, error: insertError } = await supabase
-    .from('submissions')
-    .insert({
-      contest_id: contestId,
-      contestant_id: user.id,
-      content,
-      file_urls,
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !submission) {
+  if (insertError || !submissionId) {
+    if (insertError?.message?.includes('duplicate_submission')) {
+      return Response.json(
+        { error: 'You have already submitted to this contest' },
+        { status: 409 }
+      )
+    }
+    if (
+      insertError?.message?.includes('submission_not_open') ||
+      insertError?.message?.includes('submission_capacity_reached')
+    ) {
+      return Response.json(
+        { error: 'Contest is not accepting submissions' },
+        { status: 400 }
+      )
+    }
     console.error('[Submit] Insert failed:', insertError)
     return Response.json({ error: 'Failed to create submission' }, { status: 500 })
   }
-
-  const admin = createAdminClient()
 
   // 8. Notification debounce — only notify lister if no notification of type
   //    'new_submission' for this contest was created in the last 60 minutes
@@ -222,7 +258,7 @@ export async function POST(
       contest_id: contestId,
     })
 
-    // Fire-and-forget email to lister
+    // Queue one creator summary per hour. Delivery retries independently.
     const { data: lister } = await admin
       .from('profiles')
       .select('email, full_name')
@@ -231,45 +267,28 @@ export async function POST(
 
     if (lister?.email) {
       const submissionCount = (totalSubmissions ?? 0) + 1
-      void sendEmail(
-        lister.email,
-        `New submission on "${contest.title}"`,
-        base(`
-          <p style="color:#374151;font-size:15px;line-height:1.6;">Hi ${lister.full_name ?? 'there'},</p>
-          <p style="color:#374151;font-size:15px;line-height:1.6;">
-            A new submission has been received for 
-            <strong>"${contest.title}"</strong>.
-          </p>
-          <p style="color:#374151;font-size:15px;line-height:1.6;">
-            Total submissions so far: <strong>${submissionCount}</strong> 
-            / ${contest.max_entries}
-          </p>
-          ${btn('Review Submissions',
-            process.env.NEXT_PUBLIC_APP_URL + 
-            '/dashboard/lister/contest/' + contestId
-          )}
-        `)
-      )
+      const hourBucket = Math.floor(Date.now() / (60 * 60 * 1000))
+      await enqueueEmail({
+        idempotencyKey: `new-submission/${contestId}/${hourBucket}`,
+        eventType: 'new_submission',
+        contestId,
+        userId: contest.lister_id,
+        to: lister.email,
+        payload: {
+          listerName: lister.full_name ?? 'there',
+          contestTitle: contest.title,
+          submissionCount,
+          maxSubmissions: contest.max_entries,
+          reviewUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/lister/contest/${contestId}`,
+        },
+      })
+      await deliverPendingEmails(10)
     }
   }
 
-  // 9. Auto-move to judging if contest is now full
-  const currentCount = (totalSubmissions ?? 0) + 1
-  if (currentCount >= contest.max_entries) {
-    await admin
-      .from('contests')
-      .update({ status: 'judging', updated_at: new Date().toISOString() })
-      .eq('id', contestId)
+  // The submission deadline is fixed. Receiving every expected submission
+  // does not move the contest to judging early.
 
-    await admin.from('notifications').insert({
-      user_id: contest.lister_id,
-      type: 'contest_full',
-      title: 'Contest is full',
-      message: 'Your contest has reached its entry limit. Pick a winner!',
-      contest_id: contestId,
-    })
-  }
-
-  // 10. Return created submission
-  return Response.json({ submission_id: submission.id }, { status: 201 })
+  // 9. Return created submission
+  return Response.json({ submission_id: submissionId }, { status: 201 })
 }

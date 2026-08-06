@@ -2,15 +2,17 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Trophy, Clock, Users, Cpu, ChevronDown, Video } from 'lucide-react'
+import { AlertCircle, Clock, Users, ChevronDown, Video } from 'lucide-react'
 import { formatINR, daysUntil, getContestPhase, cn } from '@/lib/utils'
 import AuthModal from '@/components/auth-modal'
 import { User } from '@supabase/supabase-js'
 import { InteractiveHoverButton } from '@/components/magicui/interactive-hover-button'
+import { ContestStatusBadge } from '@/components/contest-lifecycle'
+import type { VisibleContest } from '@/lib/types'
 
 type SortOption = 'newest' | 'prize_high' | 'prize_low' | 'ending_soon'
 
-export default function BrowseClient({ initialContests, user }: { initialContests: any[], user: User | null }) {
+export default function BrowseClient({ initialContests, user }: { initialContests: VisibleContest[], user: User | null }) {
   const router = useRouter()
   const [activeCategory, setActiveCategory] = useState('All Categories')
   const [authModalOpen, setAuthModalOpen] = useState(false)
@@ -221,7 +223,7 @@ export default function BrowseClient({ initialContests, user }: { initialContest
                   >
                     {/* Category Image */}
                     <div 
-                      className="hidden md:flex w-[200px] shrink-0 bg-gray-50 relative"
+                      className="relative flex h-28 w-full shrink-0 bg-gray-50 md:h-auto md:w-[200px]"
                       style={{ background: catColor.bg }}
                     >
                       <img 
@@ -239,16 +241,15 @@ export default function BrowseClient({ initialContests, user }: { initialContest
                     <div className="flex-1 flex flex-col md:flex-row items-start md:items-center p-5 md:p-6 gap-5 md:gap-6 min-w-0">
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                      {/* Category badge */}
-                      <span
-                        style={{
-                          background: catColor.bg,
-                          color: catColor.text,
-                        }}
-                        className="inline-block px-2 py-0.5 text-[10px] font-bold tracking-wider rounded uppercase mb-2"
-                      >
-                        {contest.category === 'Naming' ? 'Brand Naming' : contest.category}
-                      </span>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span
+                          style={{ background: catColor.bg, color: catColor.text }}
+                          className="inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                        >
+                          {contest.category === 'Naming' ? 'Brand Naming' : contest.category}
+                        </span>
+                        <ContestStatusBadge phase={phase} className="px-2 py-0.5 text-[10px]" />
+                      </div>
 
                       {/* Title */}
                       <h3 className="text-lg font-bold text-[#111827] mb-1 group-hover:text-[#6366F1] transition-colors whitespace-normal break-words md:truncate">
@@ -316,7 +317,7 @@ export default function BrowseClient({ initialContests, user }: { initialContest
                         </span>
                         {contest.profiles?.avatar_url || contest.lister_avatar ? (
                           <img 
-                            src={contest.profiles?.avatar_url || contest.lister_avatar} 
+                            src={contest.profiles?.avatar_url ?? contest.lister_avatar ?? undefined}
                             alt={contest.profiles?.full_name || contest.lister_name || 'User'} 
                             className="w-8 h-8 rounded-full object-cover border border-gray-200 shrink-0"
                           />

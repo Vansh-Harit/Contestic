@@ -1,9 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
-import { sendEmail } from '@/lib/resend'
-import { prizeSentEmail } from '@/lib/email-templates'
+import { deliverPendingEmails, enqueueEmail } from '@/lib/email-delivery'
 import { formatINR } from '@/lib/utils'
+
+type PayoutProfile = {
+  full_name: string | null
+  email: string | null
+}
+
+function normalizePayoutProfile(
+  value: PayoutProfile | PayoutProfile[] | null | undefined
+): PayoutProfile | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
 
 export async function POST(
   request: Request,
@@ -29,12 +39,20 @@ export async function POST(
   }
 
   // Parse body
-  let adminNote = ''
+  let transferReference = ''
   try {
-    const body = await request.json()
-    adminNote = body.admin_note || ''
+    const body = (await request.json()) as { admin_note?: unknown }
+    transferReference =
+      typeof body.admin_note === 'string' ? body.admin_note.trim() : ''
   } catch {
-    // No body is fine
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  if (transferReference.length < 3 || transferReference.length > 100) {
+    return NextResponse.json(
+      { error: 'A 3-100 character UPI/transaction reference is required' },
+      { status: 400 }
+    )
   }
 
   const supabaseAdmin = createAdminClient()
@@ -50,6 +68,56 @@ export async function POST(
     return NextResponse.json({ error: 'Payout request not found' }, { status: 404 })
   }
 
+  const queuePayoutConfirmation = async (reference: string) => {
+    const winnerProfile = normalizePayoutProfile(payout.profiles)
+    if (!winnerProfile?.email) return
+
+    const winnerUpi = payout.winner_upi || ''
+    const maskedUpi = winnerUpi.length > 6
+      ? `${winnerUpi.slice(0, 3)}****${winnerUpi.slice(-3)}`
+      : 'your saved UPI ID'
+    const contestTitle = payout.contests?.title || 'Contest'
+    const prizeAmount = payout.contests?.prize_amount || 0
+
+    await enqueueEmail({
+      idempotencyKey: `payout-transferred/${payout.contest_id}/${payout.id}`,
+      eventType: 'payout_transferred',
+      contestId: payout.contest_id,
+      userId: payout.winner_id,
+      to: winnerProfile.email,
+      payload: {
+        winnerName: winnerProfile.full_name ?? 'there',
+        contestTitle,
+        prizeFormatted: formatINR(prizeAmount),
+        maskedUpi,
+        transferReference: reference,
+      },
+    })
+    await deliverPendingEmails(10)
+  }
+
+  if (payout.status === 'transferred') {
+    const { error: reconciliationError } = await supabaseAdmin
+      .from('payments')
+      .update({
+        payout_status: 'completed',
+        payout_transfer_id: payout.admin_note || transferReference,
+      })
+      .eq('contest_id', payout.contest_id)
+
+    if (reconciliationError) {
+      console.error('[Admin Payouts] Payment reconciliation failed', reconciliationError)
+      return NextResponse.json(
+        { error: 'Transfer is recorded; reconciliation is still pending' },
+        { status: 500 }
+      )
+    }
+
+    await queuePayoutConfirmation(payout.admin_note || transferReference)
+
+    return NextResponse.json({ success: true, status: 'already_recorded' })
+  }
+
   if (payout.status !== 'pending_transfer') {
     return NextResponse.json(
       { error: `Cannot transfer — current status is "${payout.status}"` },
@@ -58,57 +126,62 @@ export async function POST(
   }
 
   // Mark payout as transferred
-  const { error: updateError } = await supabaseAdmin
+  const { data: transitioned, error: updateError } = await supabaseAdmin
     .from('payout_requests')
     .update({
       status: 'transferred',
-      admin_note: adminNote || null,
+      admin_note: transferReference,
       transferred_at: new Date().toISOString(),
     })
     .eq('id', params.id)
+    .eq('status', 'pending_transfer')
+    .select('id')
+    .maybeSingle()
 
-  if (updateError) {
+  if (updateError || !transitioned) {
     console.error('[Admin Payouts] Update failed:', updateError)
-    return NextResponse.json({ error: 'Failed to update payout' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Payout state changed. Refresh before recording the transfer.' },
+      { status: 409 }
+    )
   }
 
   // Update payments payout_status
-  await supabaseAdmin
+  const { error: paymentUpdateError } = await supabaseAdmin
     .from('payments')
-    .update({ payout_status: 'completed' })
+    .update({
+      payout_status: 'completed',
+      payout_transfer_id: transferReference,
+    })
     .eq('contest_id', payout.contest_id)
 
-  // Notify winner
-  await supabaseAdmin.from('notifications').insert({
-    user_id: payout.winner_id,
-    type: 'prize_sent',
-    title: 'Your prize has been sent!',
-    message: 'Your prize money has been transferred. Check your UPI or bank account.',
-    contest_id: payout.contest_id,
-  })
-
-  // Fire-and-forget email to winner
-  const winnerEmailAddr = payout.profiles?.email
-  const contestTitle = payout.contests?.title || 'Contest'
-  const prizeAmount = payout.contests?.prize_amount || 0
-  const winnerUpi = payout.winner_upi || ''
-
-  if (winnerEmailAddr) {
-    const maskedUpi = winnerUpi.length > 6
-      ? `${winnerUpi.slice(0, 3)}****${winnerUpi.slice(-3)}`
-      : 'your UPI'
-
-    void sendEmail(
-      winnerEmailAddr,
-      `Your prize has been sent — ${formatINR(prizeAmount)}`,
-      prizeSentEmail(
-        payout.profiles?.full_name ?? 'there',
-        contestTitle,
-        formatINR(prizeAmount),
-        maskedUpi
-      )
-    )
+  if (paymentUpdateError) {
+    console.error('[Admin Payouts] Payment reconciliation failed', paymentUpdateError)
+    return NextResponse.json({ error: 'Transfer recorded; reconciliation pending' }, { status: 500 })
   }
+
+  // Notify winner
+  const { data: existingNotice } = await supabaseAdmin
+    .from('notifications')
+    .select('id')
+    .eq('contest_id', payout.contest_id)
+    .eq('type', 'prize_sent')
+    .limit(1)
+
+  if (!existingNotice?.length) {
+    const { error: noticeError } = await supabaseAdmin.from('notifications').insert({
+      user_id: payout.winner_id,
+      type: 'prize_sent',
+      title: 'Your prize has been sent!',
+      message: 'Your prize money has been transferred. Check your UPI or bank account.',
+      contest_id: payout.contest_id,
+    })
+    if (noticeError) {
+      console.error('[Admin Payouts] Winner notification failed')
+    }
+  }
+
+  await queuePayoutConfirmation(transferReference)
 
   return NextResponse.json({ success: true })
 }

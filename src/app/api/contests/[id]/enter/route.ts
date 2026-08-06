@@ -2,6 +2,30 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { enterRatelimit } from '@/lib/ratelimit'
+import { evaluateContestEntry } from '@/lib/contest-entry'
+import {
+  deliverPendingEmails,
+  enqueueEmail,
+} from '@/lib/email-delivery'
+
+type JoinedEntryProfile = {
+  email: string | null
+  full_name: string | null
+}
+
+function normalizeEntryProfile(
+  value: JoinedEntryProfile | JoinedEntryProfile[] | null | undefined
+): JoinedEntryProfile | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('en-IN', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
+  })
+}
 
 export async function POST(
   request: Request,
@@ -18,6 +42,8 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const admin = createAdminClient()
+
   // Rate limiting (Upstash Redis)
   const { success, reset } = await enterRatelimit.limit(user.id)
   if (!success) {
@@ -31,9 +57,9 @@ export async function POST(
   }
 
   // Fetch contest (include title for notification messages)
-  const { data: contest, error: contestError } = await supabase
+  const { data: contest, error: contestError } = await admin
     .from('contests')
-    .select('id, lister_id, status, entry_deadline, entry_limit, max_entries, title')
+    .select('id, lister_id, status, entry_deadline, entry_limit, max_entries, title, deadline')
     .eq('id', params.id)
     .single()
 
@@ -41,72 +67,138 @@ export async function POST(
     return NextResponse.json({ error: 'Contest not found' }, { status: 404 })
   }
 
-  if (contest.status !== 'active') {
-    return NextResponse.json({ error: 'Contest is not active' }, { status: 400 })
-  }
-
-  // Block lister from entering own contest
-  if (contest.lister_id === user.id) {
-    return NextResponse.json(
-      { error: 'You cannot enter your own contest' },
-      { status: 403 }
-    )
-  }
-
-  // Check entry deadline
-  const now = new Date()
-  const entryDeadlinePassed = contest.entry_deadline
-    ? now > new Date(contest.entry_deadline)
-    : false
-
   // Check entry capacity
-  const { count: entryCount } = await supabase
+  const { count: entryCount, error: entryCountError } = await admin
     .from('contest_entries')
     .select('*', { count: 'exact', head: true })
     .eq('contest_id', params.id)
 
-  const effectiveLimit = contest.entry_limit ?? contest.max_entries
-  const entryFull = (entryCount ?? 0) >= effectiveLimit
-
-  if (entryDeadlinePassed || entryFull) {
-    return NextResponse.json(
-      { error: 'Entry period has closed for this contest' },
-      { status: 400 }
-    )
+  if (entryCountError || entryCount === null) {
+    console.error('Entry count failed:', entryCountError)
+    return NextResponse.json({ error: 'Failed to check contest capacity' }, { status: 500 })
   }
 
+  const effectiveLimit = contest.entry_limit ?? contest.max_entries
   // Check if already entered
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('contest_entries')
     .select('id')
     .eq('contest_id', params.id)
     .eq('contestant_id', user.id)
-    .single()
+    .maybeSingle()
 
-  if (existing) {
+  if (existingError) {
+    console.error('Entry lookup failed:', existingError)
+    return NextResponse.json({ error: 'Failed to check contest entry' }, { status: 500 })
+  }
+
+  const decision = evaluateContestEntry({
+    userId: user.id,
+    listerId: contest.lister_id,
+    status: contest.status,
+    entryDeadline: contest.entry_deadline,
+    entryCount,
+    effectiveLimit,
+    alreadyEntered: !!existing,
+    now: new Date(),
+  })
+
+  if (!decision.allowed) {
     return NextResponse.json(
-      { error: 'You have already entered this contest' },
-      { status: 409 }
+      { error: decision.error },
+      { status: decision.status }
     )
   }
 
-  // Insert entry
-  const { data: entry, error: insertError } = await supabase
-    .from('contest_entries')
-    .insert({
-      contest_id: params.id,
-      contestant_id: user.id,
-    })
-    .select('id')
-    .single()
+  // Repeat the critical checks under a contest-row lock so concurrent entry
+  // requests cannot overfill the contest.
+  let { data: entryId, error: insertError } = await admin.rpc(
+    'enter_contest_authorized',
+    {
+      p_contest_id: params.id,
+      p_contestant_id: user.id,
+    }
+  )
 
-  if (insertError || !entry) {
+  const rpcMissing =
+    insertError?.code === 'PGRST202' ||
+    insertError?.message?.includes('schema cache')
+
+  // Keep the local development flow usable before the coordinated migration
+  // is approved. Production never falls back from the atomic function.
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    rpcMissing
+  ) {
+    const fallback = await admin
+      .from('contest_entries')
+      .insert({
+        contest_id: params.id,
+        contestant_id: user.id,
+      })
+      .select('id')
+      .single()
+
+    entryId = fallback.data?.id ?? null
+    insertError = fallback.error
+  }
+
+  if (insertError || !entryId) {
+    if (
+      insertError?.code === '23505' ||
+      insertError?.message?.includes('duplicate_entry')
+    ) {
+      return NextResponse.json(
+        { error: 'You have already entered this contest' },
+        { status: 409 }
+      )
+    }
+    if (
+      insertError?.message?.includes('entry_not_open') ||
+      insertError?.message?.includes('entry_capacity_reached')
+    ) {
+      return NextResponse.json(
+        { error: 'Entry period has closed for this contest' },
+        { status: 400 }
+      )
+    }
+    if (insertError?.message?.includes('creator_cannot_enter')) {
+      return NextResponse.json(
+        { error: 'You cannot enter your own contest' },
+        { status: 403 }
+      )
+    }
     console.error('Entry insert failed:', insertError)
     return NextResponse.json({ error: 'Failed to enter contest' }, { status: 500 })
   }
 
-  const admin = createAdminClient()
-  const currentCount = (entryCount ?? 0) + 1
+  const { data: contestantProfile } = await admin
+    .from('profiles')
+    .select('email, full_name')
+    .eq('id', user.id)
+    .single()
+
+  if (contestantProfile?.email) {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    await enqueueEmail({
+      idempotencyKey: `entry-confirmed/${params.id}/${user.id}`,
+      eventType: 'entry_confirmed',
+      contestId: params.id,
+      userId: user.id,
+      to: contestantProfile.email,
+      payload: {
+        participantName: contestantProfile.full_name ?? 'there',
+        contestTitle: contest.title,
+        entryClosesAt: contest.entry_deadline
+          ? formatDateTime(contest.entry_deadline)
+          : 'the announced entry cutoff',
+        submissionDeadline: formatDateTime(contest.deadline),
+        contestUrl: `${appUrl}/contest/${params.id}`,
+      },
+    })
+  }
+
+  const currentCount = entryCount + 1
 
   // Check if this entry just filled the contest → notify lister
   if (currentCount >= effectiveLimit) {
@@ -117,6 +209,34 @@ export async function POST(
       message: `All ${effectiveLimit} spots taken for "${contest.title}". Submission window is now open for participants.`,
       contest_id: params.id,
     })
+
+    const { data: allEntries } = await admin
+      .from('contest_entries')
+      .select('contestant_id, profiles(email, full_name)')
+      .eq('contest_id', params.id)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+    for (const entry of allEntries ?? []) {
+      const profile = normalizeEntryProfile(entry.profiles)
+      if (!profile?.email) continue
+      await enqueueEmail({
+        idempotencyKey: `submission-open/${params.id}/${entry.contestant_id}`,
+        eventType: 'submission_open',
+        contestId: params.id,
+        userId: entry.contestant_id,
+        to: profile.email,
+        payload: {
+          participantName: profile.full_name ?? 'there',
+          contestTitle: contest.title,
+          totalSlots: effectiveLimit,
+          entryCount: effectiveLimit,
+          openedEarly: 'true',
+          contestUrl: `${appUrl}/contest/${params.id}`,
+          submissionDeadline: formatDateTime(contest.deadline),
+        },
+      })
+    }
+    await deliverPendingEmails(25)
   } else {
     // Debounced new_entry notification (60-min window)
     const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -141,96 +261,21 @@ export async function POST(
     }
   }
 
+  await deliverPendingEmails(10)
+
   return NextResponse.json(
     {
-      entry_id: entry.id,
+      entry_id: entryId,
       message:
-        'You are entered! Full brief and materials will be revealed when the entry period closes.',
+        'You are entered. Entry is final. Full brief and materials will be revealed when the entry period closes.',
     },
     { status: 201 }
   )
 }
 
-export async function DELETE(
-  request: Request,
-  props: { params: Promise<{ id: string }> }
-) {
-  const params = await props.params
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // Fetch contest
-  const { data: contest, error: contestError } = await supabase
-    .from('contests')
-    .select('id, status, entry_deadline, entry_limit, max_entries')
-    .eq('id', params.id)
-    .single()
-
-  if (contestError || !contest) {
-    return NextResponse.json({ error: 'Contest not found' }, { status: 404 })
-  }
-
-  if (contest.status !== 'active') {
-    return NextResponse.json(
-      { error: 'Cannot withdraw from a non-active contest' },
-      { status: 400 }
-    )
-  }
-
-  // Compute phase — only allow withdrawal during entry_open
-  const now = new Date()
-  const entryDeadlinePassed = contest.entry_deadline
-    ? now > new Date(contest.entry_deadline)
-    : false
-
-  const { count: entryCount } = await supabase
-    .from('contest_entries')
-    .select('*', { count: 'exact', head: true })
-    .eq('contest_id', params.id)
-
-  const effectiveLimit = contest.entry_limit ?? contest.max_entries
-  const entryFull = (entryCount ?? 0) >= effectiveLimit
-
-  if (entryDeadlinePassed || entryFull) {
-    return NextResponse.json(
-      { error: 'Cannot withdraw after submission period begins' },
-      { status: 400 }
-    )
-  }
-
-  // Check no submission exists from this user
-  const { data: existingSub } = await supabase
-    .from('submissions')
-    .select('id')
-    .eq('contest_id', params.id)
-    .eq('contestant_id', user.id)
-    .single()
-
-  if (existingSub) {
-    return NextResponse.json(
-      { error: 'Cannot withdraw after submitting work' },
-      { status: 400 }
-    )
-  }
-
-  // Delete the entry
-  const { error: deleteError } = await supabase
-    .from('contest_entries')
-    .delete()
-    .eq('contest_id', params.id)
-    .eq('contestant_id', user.id)
-
-  if (deleteError) {
-    console.error('Entry withdrawal failed:', deleteError)
-    return NextResponse.json({ error: 'Failed to withdraw' }, { status: 500 })
-  }
-
-  return NextResponse.json({ message: 'Successfully withdrawn from contest' })
+export async function DELETE() {
+  return NextResponse.json(
+    { error: 'Contest entry is final and cannot be withdrawn' },
+    { status: 405, headers: { Allow: 'POST' } }
+  )
 }

@@ -42,7 +42,7 @@ export default async function AdminPayoutsPage() {
     failed: 4,
   }
 
-  const payouts = (data ?? []).sort((a: any, b: any) => {
+  const payouts = (data ?? []).sort((a, b) => {
     const aPriority = statusOrder[a.status] ?? 99
     const bPriority = statusOrder[b.status] ?? 99
     if (aPriority !== bPriority) return aPriority - bPriority

@@ -4,12 +4,55 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { formatINR } from '@/lib/utils'
-import { Search, MessageCircle, Trophy, Clock, Settings, LayoutGrid, CheckCircle, Send, Award } from 'lucide-react'
+import { Search, MessageCircle, Trophy, Clock, Settings, LayoutGrid, CheckCircle, Send, Award, WalletCards } from 'lucide-react'
 import ChatPanel from '@/components/chat-panel'
 import toast from 'react-hot-toast'
+import type { ContestPhase } from '@/lib/utils'
+import type { ContestStatus } from '@/lib/types'
+
+export interface DashboardContest {
+  id: string
+  lister_id: string
+  title: string
+  prize_amount: number
+  status: ContestStatus
+  deadline: string
+  entry_deadline: string | null
+  entry_limit: number | null
+  max_entries: number
+  entry_count?: number
+  category?: string
+  profiles?: { full_name: string | null; avatar_url: string | null } | null
+}
+
+export interface DashboardSubmission {
+  id: string
+  contest_id: string
+  status: string
+}
+
+interface DashboardPayout {
+  status: string
+}
+
+interface ChatTarget {
+  contestId: string
+  contestStatus: string
+  recipientId: string
+  recipientName: string
+}
+
+export interface ContestantDashboardItem {
+  entryId: string
+  enteredAt?: string
+  contest: DashboardContest
+  phase: ContestPhase
+  submission: DashboardSubmission | null
+  payout: DashboardPayout | null
+}
 
 const SIDEBAR_TABS = [
-  { key: 'all', label: 'All Submissions', icon: LayoutGrid },
+  { key: 'all', label: 'All contests', icon: LayoutGrid },
   { key: 'active', label: 'Active', icon: Clock },
   { key: 'submitted', label: 'Submitted', icon: Send },
   { key: 'won', label: 'Won', icon: Trophy },
@@ -22,7 +65,7 @@ export default function ContestantDashboardClient({
   userId,
   initialUnreadCounts
 }: {
-  contestsWithStatus: any[]
+  contestsWithStatus: ContestantDashboardItem[]
   stats: { 
     totalEntered: number
     totalSubmitted: number
@@ -34,7 +77,7 @@ export default function ContestantDashboardClient({
 }) {
   const [activeTab, setActiveTab] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeChat, setActiveChat] = useState<{ contestId: string; contestStatus: string; recipientId: string; recipientName: string } | null>(null)
+  const [activeChat, setActiveChat] = useState<ChatTarget | null>(null)
   const [unreadCounts, setUnreadCounts] = useState(initialUnreadCounts || {})
   const router = useRouter()
 
@@ -65,11 +108,14 @@ export default function ContestantDashboardClient({
   }, [contestsWithStatus, activeTab, searchQuery])
 
   return (
-    <div className="flex min-h-[calc(100vh-80px)] bg-white font-sans">
+    <div className="flex min-h-[calc(100vh-72px)] flex-col bg-white font-sans md:flex-row">
       {/* Left Sidebar */}
-      <aside className="w-[220px] border-r border-gray-200 bg-white flex flex-col shrink-0">
+      <aside className="flex w-full shrink-0 flex-col border-b border-gray-200 bg-gray-50 md:w-[220px] md:border-b-0 md:border-r">
+        <div className="px-4 pt-5 md:px-5 md:pt-8">
+          <p className="font-heading text-xl font-bold text-on-surface">My contests</p>
+        </div>
         {/* Nav Tabs */}
-        <nav className="flex-1 px-3 py-6 flex flex-col gap-1">
+        <nav className="flex flex-1 gap-1 overflow-x-auto px-3 py-4 md:flex-col md:overflow-visible md:py-6">
           {SIDEBAR_TABS.map(tab => {
             const Icon = tab.icon
             const isActive = activeTab === tab.key
@@ -77,7 +123,7 @@ export default function ContestantDashboardClient({
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer text-left w-full ${
+                className={`flex min-h-10 shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors md:w-full ${
                   isActive
                     ? 'bg-[#EEF2FF] text-[#6366F1] font-semibold'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
@@ -89,32 +135,23 @@ export default function ContestantDashboardClient({
             )
           })}
 
-          <div className="border-t border-gray-100 my-3" />
+          <div className="my-3 hidden border-t border-gray-200 md:block" />
 
           <Link
             href="/settings"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            className="flex min-h-10 shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-500 transition-colors hover:bg-white hover:text-gray-700"
           >
             <Settings className="w-4 h-4 shrink-0" />
             Settings
           </Link>
         </nav>
 
-        {/* Stats in sidebar */}
-        {stats.totalEntered > 0 && (
-          <div className="px-4 py-4 border-t border-gray-100 flex flex-col gap-2">
-            <SidebarStat label="Entered" value={stats.totalEntered} />
-            <SidebarStat label="Submitted" value={stats.totalSubmitted} />
-            <SidebarStat label="Won" value={stats.totalWon} highlight />
-            <SidebarStat label="Earned" value={formatINR(stats.totalEarned)} highlight={stats.totalEarned > 0} />
-          </div>
-        )}
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col">
+      <main className="flex min-w-0 flex-1 flex-col">
         {/* Top bar with search */}
-        <div className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 md:px-8">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -122,30 +159,36 @@ export default function ContestantDashboardClient({
               placeholder="Search"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-[#6366F1] focus:ring-1 focus:ring-[#6366F1]/20 transition-colors placeholder:text-gray-400"
+              className="min-h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm transition-colors placeholder:text-gray-400 focus:border-indigo-400"
             />
           </div>
         </div>
 
         {/* Content area */}
-        <div className="flex-1 px-8 py-6 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-4 py-8 md:px-8">
           {/* UPI Banner for winners */}
           {contestsWithStatus.filter(item => item.payout?.status === 'awaiting_upi').length > 0 && (
-            <div className="mb-6 flex items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-300 rounded-xl">
-              <div>
-                <p className="font-bold text-amber-800 text-sm">
-                  🏆 You have {contestsWithStatus.filter(item => item.payout?.status === 'awaiting_upi').length} prize(s) waiting!
-                </p>
-                <p className="text-amber-700 text-xs mt-1">
-                  Add your UPI ID to receive your prize money
-                </p>
+            <div className="mb-6 flex flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <WalletCards className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">
+                    Payment details are needed for {contestsWithStatus.filter(item => item.payout?.status === 'awaiting_upi').length} prize payout(s).
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    Add your UPI ID so the prize transfer can be prepared.
+                  </p>
+                </div>
               </div>
               <AddUpiButton />
             </div>
           )}
 
           {/* Page heading */}
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">My Submissions</h1>
+          <div className="mb-6">
+            <h1 className="font-heading text-3xl font-bold text-gray-900">My contests</h1>
+            <p className="mt-1 text-sm text-secondary">Track contests you entered and the next action for each one.</p>
+          </div>
 
           {/* Empty state */}
           {stats.totalEntered === 0 && (
@@ -154,14 +197,14 @@ export default function ContestantDashboardClient({
                 <Award className="w-8 h-8 text-gray-400" />
               </div>
               <p className="text-lg font-semibold text-gray-900 mb-2">
-                No submissions yet
+                No contests yet
               </p>
               <p className="text-gray-500 text-sm mb-6 max-w-sm mx-auto">
-                You haven&apos;t participated in any contests yet. Browse open contests and enter one to get started!
+                You haven&apos;t entered a contest yet. Browse open contests to get started.
               </p>
               <Link
                 href="/"
-                className="inline-block bg-[#6366F1] text-white font-bold text-sm px-6 py-3 rounded-lg hover:bg-[#4F46E5] transition-colors"
+                className="inline-block rounded-lg bg-primary-container px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
               >
                 Browse Contests
               </Link>
@@ -176,7 +219,7 @@ export default function ContestantDashboardClient({
                   No contests match this filter
                 </p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                   {filtered.map(item => (
                     <SubmissionCard
                       key={item.entryId}
@@ -214,25 +257,14 @@ export default function ContestantDashboardClient({
 }
 
 /* ─── Sidebar Stat ─── */
-function SidebarStat({ label, value, highlight = false }: { label: string; value: string | number; highlight?: boolean }) {
-  return (
-    <div className="flex items-center justify-between px-2 py-1">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-bold ${highlight ? 'text-[#6366F1]' : 'text-gray-900'}`}>
-        {value}
-      </span>
-    </div>
-  )
-}
-
 /* ─── Submission Card ─── */
 function SubmissionCard({
   item, onNavigate, onSubmit, onChat, unreadCount = 0
 }: {
-  item: any
+  item: ContestantDashboardItem
   onNavigate: (id: string) => void
   onSubmit: (id: string) => void
-  onChat?: (chatData: any) => void
+  onChat?: (chatData: ChatTarget) => void
   unreadCount?: number
 }) {
   const { contest, phase, submission, payout } = item
@@ -252,34 +284,56 @@ function SubmissionCard({
   const status = getStatus()
 
   return (
-    <div className={`bg-white border rounded-xl p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow ${
-      submission?.status === 'winner' ? 'border-gray-400' : 'border-gray-200'
-    }`}>
+    <div className="flex min-h-[340px] flex-col justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
       {/* Top section */}
       <div>
         <h3
-          className="text-[15px] font-bold text-gray-900 mb-1 cursor-pointer hover:text-[#6366F1] transition-colors leading-snug"
+          className="cursor-pointer font-heading text-2xl font-bold leading-tight text-gray-900 transition-colors hover:text-primary"
           onClick={() => onNavigate(contest.id)}
         >
           {contest.title}
         </h3>
-        <p className="text-xs text-gray-400 mb-3">Contest</p>
-
-        {/* Status */}
-        <div className="mb-3">
-          <span className="text-xs text-gray-500">Status: </span>
-          <span className={`text-xs font-semibold ${status.color}`}>{status.label}</span>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-secondary">
+          <span>{contest.category || 'Creative contest'}</span>
+          {contest.profiles?.full_name && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>Hosted by {contest.profiles.full_name}</span>
+            </>
+          )}
         </div>
 
-        {/* Countdown Timer */}
-        <CountdownTimer deadline={contest.deadline} />
+        {/* Status */}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${status.color} ${status.bg}`}>{status.label}</span>
+          <span className="text-lg font-bold text-indigo-700">{formatINR(contest.prize_amount || 0)}</span>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-outline-variant bg-gray-50 p-4">
+          {phase === 'entry_open' ? (
+            <CountdownTimer deadline={contest.entry_deadline} label="Entry closes in" />
+          ) : phase === 'submission_open' ? (
+            <CountdownTimer deadline={contest.deadline} label="Submission deadline" />
+          ) : phase === 'judging' ? (
+            <>
+              <p className="text-sm font-semibold text-amber-800">Judging in progress</p>
+              <p className="mt-1 text-xs text-secondary">The host is reviewing submitted work.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-on-surface">{phase === 'cancelled' ? 'Contest cancelled' : 'Contest completed'}</p>
+              <p className="mt-1 text-xs text-secondary">This contest is no longer accepting submissions.</p>
+            </>
+          )}
+        </div>
 
         {/* Payout status for winners */}
         {payout && (
-          <div className="mt-3 text-xs text-[#6366F1] font-medium bg-white border border-gray-300 rounded-md px-3 py-2">
-            💸 {payout.status === 'awaiting_upi' && 'Add UPI to claim prize'}
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700">
+            <WalletCards className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {payout.status === 'awaiting_upi' && 'Add UPI details to receive the prize.'}
             {payout.status === 'pending_transfer' && 'Prize transfer in progress (24-48 hrs)'}
-            {payout.status === 'transferred' && 'Prize sent ✓'}
+            {payout.status === 'transferred' && 'Prize payment has been sent.'}
           </div>
         )}
       </div>
@@ -290,9 +344,9 @@ function SubmissionCard({
         {phase === 'submission_open' && !submission && (
           <button
             onClick={() => onSubmit(contest.id)}
-            className="w-full bg-amber-400 text-gray-900 font-bold text-sm py-2.5 rounded-lg hover:bg-amber-500 transition-colors cursor-pointer"
+            className="w-full rounded-lg bg-primary-container py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
           >
-            Submit Work →
+            Submit work
           </button>
         )}
 
@@ -304,7 +358,7 @@ function SubmissionCard({
         {/* View Details — always shown */}
         <button
           onClick={() => onNavigate(contest.id)}
-          className="w-full bg-[#6366F1] text-white font-semibold text-sm py-2.5 rounded-lg hover:bg-[#4F46E5] transition-colors cursor-pointer"
+          className="w-full rounded-lg bg-primary-container py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
         >
           View Details
         </button>
@@ -319,7 +373,7 @@ function SubmissionCard({
                 recipientId: contest.lister_id,
                 recipientName: contest.profiles?.full_name ?? 'Lister'
               })}
-              className="w-full flex items-center justify-center gap-2 border border-[#6366F1] text-[#6366F1] font-medium text-sm py-2 rounded-lg hover:bg-indigo-50 transition-colors cursor-pointer"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-300 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               Chat
@@ -338,7 +392,7 @@ function SubmissionCard({
 }
 
 /* ─── Countdown Timer ─── */
-function CountdownTimer({ deadline }: { deadline: string | null }) {
+function CountdownTimer({ deadline, label }: { deadline: string | null; label: string }) {
   const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null)
 
   useEffect(() => {
@@ -365,8 +419,8 @@ function CountdownTimer({ deadline }: { deadline: string | null }) {
   if (!deadline || !timeLeft) {
     return (
       <div>
-        <p className="text-xs text-gray-900 font-mono font-semibold">00 days 00:00:00</p>
-        <p className="text-[10px] text-gray-400 mt-0.5">Timer</p>
+        <p className="text-sm font-semibold text-gray-700">Calculating…</p>
+        <p className="mt-1 text-xs text-secondary">{label}</p>
       </div>
     )
   }
@@ -375,10 +429,10 @@ function CountdownTimer({ deadline }: { deadline: string | null }) {
 
   return (
     <div>
-      <p className="text-xs text-gray-900 font-mono font-semibold" suppressHydrationWarning>
+      <p className="font-mono text-base font-semibold text-gray-900" suppressHydrationWarning>
         {pad(timeLeft.days)} days {pad(timeLeft.hours)}:{pad(timeLeft.minutes)}:{pad(timeLeft.seconds)}
       </p>
-      <p className="text-[10px] text-gray-400 mt-0.5">Countdown Timer</p>
+      <p className="mt-1 text-xs text-secondary">{label}</p>
     </div>
   )
 }
@@ -415,15 +469,15 @@ function AddUpiButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="bg-amber-400 text-gray-900 font-bold text-sm px-5 py-2.5 rounded-lg hover:bg-amber-500 transition-colors cursor-pointer whitespace-nowrap"
+        className="whitespace-nowrap rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
       >
-        Add UPI →
+        Add UPI
       </button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999]">
-          <div className="bg-white rounded-2xl p-7 w-[360px] shadow-2xl">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-[380px] rounded-2xl border border-outline-variant bg-white p-6 shadow-xl">
+            <h3 className="mb-1 font-heading text-xl font-bold text-gray-900">
               Add your UPI ID
             </h3>
             <p className="text-gray-500 text-sm mb-4">
@@ -434,7 +488,7 @@ function AddUpiButton() {
               value={upi}
               onChange={e => setUpi(e.target.value)}
               placeholder="yourname@upi"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#6366F1] focus:ring-1 focus:ring-[#6366F1]/20 mb-4"
+              className="mb-4 min-h-11 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-indigo-400"
             />
             <div className="flex gap-2">
               <button
@@ -446,7 +500,7 @@ function AddUpiButton() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 py-2.5 bg-[#6366F1] text-white rounded-lg text-sm font-bold hover:bg-[#4F46E5] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 rounded-lg bg-primary-container py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
               >
                 {saving ? 'Saving...' : 'Save UPI'}
               </button>

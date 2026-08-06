@@ -14,6 +14,7 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [user, setUser] = useState<User | null>(null)
+  const [isAuthResolved, setIsAuthResolved] = useState(false)
   const [profile, setProfile] = useState<{ full_name: string; avatar_url: string; role: string } | null>(null)
 
   const isActive = (path: string) => pathname === path
@@ -33,11 +34,13 @@ export default function Navbar() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
+      setIsAuthResolved(true)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
+      setIsAuthResolved(true)
     })
 
     return () => subscription.unsubscribe()
@@ -66,46 +69,15 @@ export default function Navbar() {
   }, [isDropdownOpen])
 
   return (
-    <nav className="bg-surface-container-lowest sticky top-0 w-full z-50 border-b border-outline-variant">
-      <div className="flex justify-between items-center h-20 px-container-padding-mobile md:px-container-padding-desktop">
-        <div className="flex items-center gap-12">
+    <nav className="sticky top-0 z-50 w-full border-b border-outline-variant bg-white/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-container-padding-mobile md:px-container-padding-desktop">
+        <div className="flex items-center">
           <Link
             href="/"
             className="text-headline-md font-heading font-bold text-primary tracking-tight"
           >
             Contestic
           </Link>
-          {!user && (
-            <div className="hidden md:flex gap-8 items-center font-sans">
-              <Link
-                href="/"
-                className={`pb-1 text-body-md font-medium transition-colors duration-200 ${isActive('/')
-                    ? 'text-primary border-b-2 border-primary font-bold'
-                    : 'text-secondary hover:text-primary-container'
-                  }`}
-              >
-                Browse
-              </Link>
-              <Link
-                href="/dashboard/lister"
-                className={`pb-1 text-body-md font-medium transition-colors duration-200 ${pathname.startsWith('/dashboard/lister')
-                    ? 'text-primary border-b-2 border-primary font-bold'
-                    : 'text-secondary hover:text-primary-container'
-                  }`}
-              >
-                Lister Dash
-              </Link>
-              <Link
-                href="/dashboard/contestant"
-                className={`pb-1 text-body-md font-medium transition-colors duration-200 ${pathname.startsWith('/dashboard/contestant')
-                    ? 'text-primary border-b-2 border-primary font-bold'
-                    : 'text-secondary hover:text-primary-container'
-                  }`}
-              >
-                Contestant Dash
-              </Link>
-            </div>
-          )}
         </div>
 
         {/* Desktop Buttons */}
@@ -114,15 +86,16 @@ export default function Navbar() {
             <>
               <button
                 onClick={() => router.push('/post')}
-                className="bg-[#6366F1] text-white px-5 py-2 rounded-full font-bold text-sm flex items-center gap-2 hover:bg-[#4F46E5] transition-colors cursor-pointer mr-2 shadow-sm"
+                className="mr-1 flex min-h-11 items-center rounded-full bg-primary-container px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
               >
-                + Host a Contest
+                Host a contest
               </button>
 
               <div className="relative profile-dropdown-container">
                 <button
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="flex items-center focus:outline-none cursor-pointer rounded-full"
+                  className="flex items-center rounded-full"
+                  aria-label="Open account menu"
                 >
                   <Avatar className="h-9 w-9 border border-outline-variant hover:border-[#6366F1] transition-colors">
                     <AvatarImage src={profile?.avatar_url || ''} />
@@ -156,7 +129,7 @@ export default function Navbar() {
                       className={`flex items-center px-4 py-2 text-body-sm font-medium transition-colors hover:bg-surface-container-low ${pathname.startsWith('/dashboard/lister') ? 'text-primary font-bold' : 'text-secondary hover:text-primary'
                         }`}
                     >
-                      Lister Dash
+                      Hosted contests
                     </Link>
                     <Link
                       href="/dashboard/contestant"
@@ -164,21 +137,7 @@ export default function Navbar() {
                       className={`flex items-center px-4 py-2 text-body-sm font-medium transition-colors hover:bg-surface-container-low ${pathname.startsWith('/dashboard/contestant') ? 'text-primary font-bold' : 'text-secondary hover:text-primary'
                         }`}
                     >
-                      Contestant Dash
-                    </Link>
-                    <Link
-                      href="/dashboard/lister"
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="flex items-center px-4 py-2 text-body-sm font-medium text-secondary hover:text-primary hover:bg-surface-container-low transition-colors"
-                    >
-                      My Contests
-                    </Link>
-                    <Link
-                      href="/dashboard/contestant"
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="flex items-center px-4 py-2 text-body-sm font-medium text-secondary hover:text-primary hover:bg-surface-container-low transition-colors"
-                    >
-                      My Submissions
+                      My contests
                     </Link>
                     <Link
                       href="/settings"
@@ -204,7 +163,7 @@ export default function Navbar() {
                         setIsDropdownOpen(false)
                         handleSignOut()
                       }}
-                      className="w-full text-left flex items-center px-4 py-2 text-body-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
+                      className="flex w-full items-center px-4 py-2 text-left text-body-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                     >
                       Sign Out
                     </button>
@@ -212,7 +171,7 @@ export default function Navbar() {
                 )}
               </div>
             </>
-          ) : (
+          ) : isAuthResolved ? (
             <>
               <button
                 onClick={() => router.push('/login')}
@@ -222,11 +181,13 @@ export default function Navbar() {
               </button>
               <button
                 onClick={() => router.push('/login?next=/post')}
-                className="bg-[#6366F1] text-white px-5 py-2 rounded-full font-bold text-sm flex items-center gap-2 hover:bg-[#4F46E5] transition-colors cursor-pointer shadow-sm"
+                className="flex min-h-11 items-center rounded-full bg-primary-container px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
               >
-                + Host a Contest
+                Host a contest
               </button>
             </>
+          ) : (
+            <div className="h-11 w-48 animate-pulse rounded-full bg-gray-100" aria-hidden="true" />
           )}
         </div>
 
@@ -245,31 +206,6 @@ export default function Navbar() {
       {/* Mobile Drawer Overlay */}
       {isOpen && (
         <div className="md:hidden border-t border-outline-variant bg-surface-container-lowest py-4 px-container-padding-mobile flex flex-col gap-4 shadow-lg animate-in slide-in-from-top duration-200">
-          <Link
-            href="/"
-            onClick={() => setIsOpen(false)}
-            className={`text-body-md font-medium py-2 ${isActive('/') ? 'text-primary font-bold' : 'text-secondary'
-              }`}
-          >
-            Browse Contests
-          </Link>
-          <Link
-            href="/dashboard/lister"
-            onClick={() => setIsOpen(false)}
-            className={`text-body-md font-medium py-2 ${pathname.startsWith('/dashboard/lister') ? 'text-primary font-bold' : 'text-secondary'
-              }`}
-          >
-            Lister Dashboard
-          </Link>
-          <Link
-            href="/dashboard/contestant"
-            onClick={() => setIsOpen(false)}
-            className={`text-body-md font-medium py-2 ${pathname.startsWith('/dashboard/contestant') ? 'text-primary font-bold' : 'text-secondary'
-              }`}
-          >
-            Contestant Dashboard
-          </Link>
-          <hr className="border-outline-variant" />
           {user ? (
             <>
               <div className="flex items-center gap-3 py-2 px-1">
@@ -281,6 +217,28 @@ export default function Navbar() {
                 </Avatar>
                 <span className="text-body-md font-bold text-on-surface">{profile?.full_name || user.email}</span>
               </div>
+              <hr className="border-outline-variant" />
+              <Link
+                href="/"
+                onClick={() => setIsOpen(false)}
+                className={`text-body-md font-medium py-2 ${isActive('/') ? 'text-primary font-bold' : 'text-secondary'}`}
+              >
+                Browse
+              </Link>
+              <Link
+                href="/dashboard/lister"
+                onClick={() => setIsOpen(false)}
+                className={`text-body-md font-medium py-2 ${pathname.startsWith('/dashboard/lister') ? 'text-primary font-bold' : 'text-secondary'}`}
+              >
+                Hosted contests
+              </Link>
+              <Link
+                href="/dashboard/contestant"
+                onClick={() => setIsOpen(false)}
+                className={`text-body-md font-medium py-2 ${pathname.startsWith('/dashboard/contestant') ? 'text-primary font-bold' : 'text-secondary'}`}
+              >
+                My contests
+              </Link>
               {profile?.role === 'admin' && (
                 <Link
                   href="/admin/payouts"
@@ -291,6 +249,13 @@ export default function Navbar() {
                   Admin Payouts
                 </Link>
               )}
+              <Link
+                href="/settings"
+                onClick={() => setIsOpen(false)}
+                className={`text-body-md font-medium py-2 ${pathname === '/settings' ? 'text-primary font-bold' : 'text-secondary'}`}
+              >
+                Settings
+              </Link>
               <button
                 onClick={() => {
                   setIsOpen(false)
@@ -301,7 +266,7 @@ export default function Navbar() {
                 Sign Out
               </button>
             </>
-          ) : (
+          ) : isAuthResolved ? (
             <>
               <button
                 onClick={() => {
@@ -322,6 +287,8 @@ export default function Navbar() {
                 Post a Contest
               </button>
             </>
+          ) : (
+            <div className="h-11 w-full animate-pulse rounded-lg bg-gray-100" aria-hidden="true" />
           )}
         </div>
       )}

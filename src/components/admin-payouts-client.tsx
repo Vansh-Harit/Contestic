@@ -45,12 +45,17 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
   const filteredPayouts = payouts.filter(p => p.status === activeTab)
 
   const handleMarkTransferred = async (payoutId: string) => {
+    const transferReference = (utrInputs[payoutId] || '').trim()
+    if (transferReference.length < 3 || transferReference.length > 100) {
+      toast.error('Enter the UPI/UTR transaction reference first')
+      return
+    }
     setLoadingIds(prev => new Set(prev).add(payoutId))
     try {
       const res = await fetch(`/api/admin/payouts/${payoutId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_note: utrInputs[payoutId] || '' }),
+        body: JSON.stringify({ admin_note: transferReference }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -60,7 +65,7 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
       setPayouts(prev =>
         prev.map(p =>
           p.id === payoutId
-            ? { ...p, status: 'transferred' as PayoutStatus, admin_note: utrInputs[payoutId] || null, transferred_at: new Date().toISOString() }
+            ? { ...p, status: 'transferred' as PayoutStatus, admin_note: transferReference, transferred_at: new Date().toISOString() }
             : p
         )
       )
@@ -133,13 +138,13 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
   }
 
   return (
-    <main className="max-w-5xl mx-auto w-full px-container-padding-mobile md:px-container-padding-desktop py-12 font-sans">
+    <main className="mx-auto w-full max-w-5xl px-container-padding-mobile py-10 font-sans md:px-container-padding-desktop md:py-12">
       {/* Header */}
-      <header className="mb-10">
-        <div className="flex items-center gap-3 mb-2">
+      <header className="mb-8">
+        <div className="mb-2 flex items-center gap-3">
           <Shield className="h-6 w-6 text-primary" />
-          <h1 className="text-headline-lg font-heading font-bold text-on-surface">
-            Payout Dashboard
+          <h1 className="font-heading text-3xl font-bold text-on-surface">
+            Payout dashboard
           </h1>
         </div>
         <p className="text-body-md text-secondary">
@@ -148,12 +153,12 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-8 border-b border-outline-variant pb-px">
+      <div className="mb-8 flex gap-2 overflow-x-auto border-b border-outline-variant pb-px">
         {tabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-5 py-3 text-body-sm font-bold transition-all border-b-2 cursor-pointer ${
+            className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
               activeTab === tab.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-secondary hover:text-on-surface hover:border-outline-variant'
@@ -191,7 +196,7 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
             return (
               <div
                 key={payout.id}
-                className={`bg-surface-container-lowest border border-outline-variant rounded-xl p-6 transition-opacity ${
+                className={`rounded-xl border border-outline-variant bg-white p-5 shadow-sm transition-opacity md:p-6 ${
                   isTransferred ? 'opacity-60' : ''
                 }`}
               >
@@ -237,7 +242,7 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
                             {copiedId === payout.id ? (
                               <>
                                 <Check className="h-3.5 w-3.5 text-green-600" />
-                                <span className="text-green-600 font-bold">Copied ✓</span>
+                                <span className="font-semibold text-green-700">Copied</span>
                               </>
                             ) : (
                               <>
@@ -279,7 +284,7 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
                     <button
                       onClick={() => handleMarkTransferred(payout.id)}
                       disabled={isLoading}
-                      className="px-6 py-3 bg-primary-container text-on-primary-container rounded-lg font-bold text-body-sm hover:opacity-90 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      className="shrink-0 rounded-lg bg-primary-container px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
                     >
                       {isLoading ? 'Processing...' : 'Mark as Transferred'}
                     </button>
@@ -304,7 +309,7 @@ export default function AdminPayoutsClient({ initialPayouts }: { initialPayouts:
                       <button
                         onClick={() => handleSaveUpi(payout.id)}
                         disabled={isLoading}
-                        className="px-6 py-3 bg-primary-container text-on-primary-container rounded-lg font-bold text-body-sm hover:opacity-90 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      className="shrink-0 rounded-lg bg-primary-container px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
                       >
                         {isLoading ? 'Saving...' : 'Save UPI'}
                       </button>

@@ -5,13 +5,23 @@ import { NextResponse } from 'next/server'
 import { rupeesToPaise, calcPlatformFee, calcTotal } from '@/lib/utils'
 import { MIN_PRIZE_INR, MAX_PRIZE_INR, MIN_ENTRIES, MAX_ENTRIES } from '@/lib/constants'
 import { createContestRatelimit } from '@/lib/ratelimit'
+import type { ContestFormData } from '@/lib/types'
+import type { RazorpayOrder } from 'razorpay'
+import { randomUUID } from 'crypto'
+
+type ContestRequestBody = Partial<ContestFormData> & {
+  resume_contest_id?: unknown
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
 
 export async function GET() {
   const supabase = await createClient()
 
   const { data: contests, error } = await supabase
-    .from('contests_with_counts')
-    .select('*')
+    .rpc('get_visible_contests')
     .in('status', ['active', 'judging'])
     .order('created_at', { ascending: false })
 
@@ -33,23 +43,72 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Rate limiting (Upstash Redis — 3 contest creations per minute)
-  const { success, reset } = await createContestRatelimit.limit(user.id)
-  if (!success) {
-    return NextResponse.json(
-      {
-        error: 'Too many requests. Please try again later.',
-        retryAfter: Math.ceil((reset - Date.now()) / 1000),
-      },
-      { status: 429 }
-    )
-  }
-
-  let body: any
+  // Parse first so a valid payment retry can reuse its existing order.
+  let body: ContestRequestBody
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  if (body.resume_contest_id !== undefined) {
+    if (
+      typeof body.resume_contest_id !== 'string' ||
+      !isUuid(body.resume_contest_id)
+    ) {
+      return NextResponse.json({ error: 'Invalid draft contest' }, { status: 400 })
+    }
+
+    const supabaseAdmin = createAdminClient()
+    const { data: draft } = await supabaseAdmin
+      .from('contests')
+      .select('id, status, razorpay_order_id, total_charged, created_at')
+      .eq('id', body.resume_contest_id)
+      .eq('lister_id', user.id)
+      .maybeSingle()
+
+    if (!draft) {
+      return NextResponse.json({ error: 'Draft contest not found' }, { status: 404 })
+    }
+    if (draft.status !== 'draft') {
+      return NextResponse.json(
+        { error: 'This contest is no longer awaiting payment' },
+        { status: 409 }
+      )
+    }
+    if (Date.now() - new Date(draft.created_at).getTime() >= 2 * 24 * 60 * 60 * 1000) {
+      return NextResponse.json(
+        { error: 'This unpaid draft has expired. Please create a new contest.' },
+        { status: 410 }
+      )
+    }
+
+    const { data: payment } = await supabaseAdmin
+      .from('payments')
+      .select('razorpay_order_id, amount, payment_status')
+      .eq('contest_id', draft.id)
+      .maybeSingle()
+
+    if (
+      !payment ||
+      !draft.razorpay_order_id ||
+      payment.razorpay_order_id !== draft.razorpay_order_id ||
+      Number(payment.amount) !== Number(draft.total_charged) ||
+      !['pending', 'failed'].includes(payment.payment_status)
+    ) {
+      return NextResponse.json(
+        { error: 'This draft payment cannot be resumed safely' },
+        { status: 409 }
+      )
+    }
+
+    return NextResponse.json({
+      contest_id: draft.id,
+      order_id: draft.razorpay_order_id,
+      amount: payment.amount,
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      resumed: true,
+    })
   }
 
   // Validate required fields
@@ -141,19 +200,95 @@ export async function POST(request: Request) {
   const platformFee = calcPlatformFee(prizePaise)
   const total = calcTotal(prizePaise)
 
+  const supabaseAdmin = createAdminClient()
+  const { data: matchingDraft } = await supabaseAdmin
+    .from('contests')
+    .select('id, razorpay_order_id, total_charged')
+    .eq('lister_id', user.id)
+    .eq('status', 'draft')
+    .eq('title', title)
+    .eq('description', description)
+    .eq('public_summary', public_summary)
+    .eq('category', category)
+    .eq('prize_amount', prizePaise)
+    .eq('max_entries', entries)
+    .eq('deadline', new Date(deadline).toISOString())
+    .eq('ai_policy', ai_policy)
+    .eq('entry_window_hours', hours)
+    .gte('created_at', new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (matchingDraft?.razorpay_order_id) {
+    const [{ data: payment }, { data: storedMaterials }] = await Promise.all([
+      supabaseAdmin
+        .from('payments')
+        .select('razorpay_order_id, amount, payment_status')
+        .eq('contest_id', matchingDraft.id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('contest_materials')
+        .select('type, label, content, display_order')
+        .eq('contest_id', matchingDraft.id)
+        .order('display_order', { ascending: true }),
+    ])
+
+    const requestedMaterials = (materials ?? []).map((material) => ({
+      type: material.type,
+      label: material.label,
+      content: material.content,
+    }))
+    const persistedMaterials = (storedMaterials ?? []).map((material) => ({
+      type: material.type,
+      label: material.label,
+      content: material.content,
+    }))
+    const materialsMatch =
+      JSON.stringify(requestedMaterials) === JSON.stringify(persistedMaterials)
+
+    if (
+      materialsMatch &&
+      payment &&
+      payment.razorpay_order_id === matchingDraft.razorpay_order_id &&
+      Number(payment.amount) === Number(matchingDraft.total_charged) &&
+      ['pending', 'failed'].includes(payment.payment_status)
+    ) {
+      return NextResponse.json({
+        contest_id: matchingDraft.id,
+        order_id: matchingDraft.razorpay_order_id,
+        amount: payment.amount,
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        resumed: true,
+      })
+    }
+  }
+
+  // Rate-limit only the creation of a new contest and Razorpay order.
+  const { success, reset } = await createContestRatelimit.limit(user.id)
+  if (!success) {
+    return NextResponse.json(
+      {
+        error: 'Too many requests. Please try again later.',
+        retryAfter: Math.ceil((reset - Date.now()) / 1000),
+      },
+      { status: 429 }
+    )
+  }
+
   // Create Razorpay order FIRST. If this fails, no DB record is created.
-  let order: any
+  let order: RazorpayOrder
   try {
     order = await razorpay.orders.create({
       amount: total,
       currency: 'INR',
-      receipt: `contest_${Date.now()}`,
+      receipt: `contest_${Date.now()}_${randomUUID().slice(0, 8)}`,
       notes: {
         lister_id: user.id,
         prize_paise: String(prizePaise),
       },
     })
-  } catch (err: any) {
+  } catch (err) {
     console.error('Razorpay order creation failed:', err)
     return NextResponse.json(
       { error: 'Payment gateway error. Please try again.' },
@@ -161,8 +296,20 @@ export async function POST(request: Request) {
     )
   }
 
+  if (
+    !order.id ||
+    Number(order.amount) !== total ||
+    order.currency !== 'INR'
+  ) {
+    console.error('[Contest] Razorpay returned an invalid order response')
+    return NextResponse.json(
+      { error: 'Payment gateway returned an invalid order.' },
+      { status: 502 }
+    )
+  }
+
   // Insert contest with status 'draft'
-  const { data: contest, error: contestError } = await supabase
+  const { data: contest, error: contestError } = await supabaseAdmin
     .from('contests')
     .insert({
       lister_id: user.id,
@@ -186,10 +333,7 @@ export async function POST(request: Request) {
   if (contestError) {
     // CRITICAL: Razorpay order exists but DB insert failed.
     // Log the orphaned order for manual cleanup.
-    console.error(
-      `ORPHANED RAZORPAY ORDER: ${order.id} | lister: ${user.id} | amount: ${total}`,
-      contestError
-    )
+    console.error('[Contest] Failed to persist Razorpay-backed contest', contestError)
     return NextResponse.json(
       { error: 'Failed to create contest. Our team has been notified.' },
       { status: 500 }
@@ -197,9 +341,9 @@ export async function POST(request: Request) {
   }
 
   // Insert materials if present
-  if (body.materials && Array.isArray(body.materials) && body.materials.length > 0) {
-    const { error: materialsError } = await supabase.from('contest_materials').insert(
-      body.materials.map((m: any, i: number) => ({
+  if (materials && materials.length > 0) {
+    const { error: materialsError } = await supabaseAdmin.from('contest_materials').insert(
+      materials.map((m, i) => ({
         contest_id: contest.id,
         type: m.type,
         label: m.label,
@@ -209,11 +353,15 @@ export async function POST(request: Request) {
     )
     if (materialsError) {
       console.error('Failed to insert contest materials:', materialsError)
+      await supabaseAdmin.from('contests').delete().eq('id', contest.id)
+      return NextResponse.json(
+        { error: 'Failed to save contest materials. No payment was started.' },
+        { status: 500 }
+      )
     }
   }
 
   // Insert payment record using admin client (bypasses RLS on payments table)
-  const supabaseAdmin = createAdminClient()
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
     contest_id: contest.id,
     razorpay_order_id: order.id,
@@ -225,12 +373,12 @@ export async function POST(request: Request) {
   })
 
   if (paymentError) {
-    console.error(
-      `ORPHANED PAYMENT RECORD: order=${order.id} contest=${contest.id}`,
-      paymentError
+    console.error('[Contest] Failed to persist payment record', paymentError)
+    await supabaseAdmin.from('contests').delete().eq('id', contest.id)
+    return NextResponse.json(
+      { error: 'Failed to prepare payment. No payment was started.' },
+      { status: 500 }
     )
-    // Contest exists but payment record failed. Non-fatal for the user flow
-    // since webhook will reconcile, but log it.
   } else {
     console.log('[Contest] Payment row created for:', contest.id)
   }

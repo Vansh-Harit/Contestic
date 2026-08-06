@@ -1,12 +1,18 @@
 import type { Metadata } from 'next'
 import { Toaster } from 'react-hot-toast'
-import { Oswald } from 'next/font/google'
+import { Inter, Oswald } from 'next/font/google'
 import './globals.css'
 
 const oswald = Oswald({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-oswald',
+})
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
 })
 
 export const metadata: Metadata = {
@@ -26,7 +32,7 @@ export default function RootLayout({
       className="h-full antialiased"
       suppressHydrationWarning
     >
-      <body className={`min-h-full flex flex-col bg-background text-foreground ${oswald.variable} font-sans`} suppressHydrationWarning>
+      <body className={`min-h-full flex flex-col bg-background text-foreground ${oswald.variable} ${inter.variable} font-sans`} suppressHydrationWarning>
         {children}
         <Toaster position="bottom-right" />
       </body>

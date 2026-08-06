@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Trash2, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Camera, Loader2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { MAX_AVATAR_SIZE_BYTES, ALLOWED_AVATAR_TYPES } from '@/lib/constants'
+import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_SIZE_BYTES } from '@/lib/constants'
 
 interface SettingsClientProps {
   profile: {
+    id: string
     fullName: string
     avatarUrl: string | null
+    bio: string
     email: string
   }
 }
@@ -19,19 +22,19 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
+  const [fullName, setFullName] = useState(profile.fullName)
+  const [bio, setBio] = useState(profile.bio)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   const displayUrl = previewUrl || avatarUrl
-  const initials = profile.fullName
-    ? profile.fullName.charAt(0).toUpperCase()
-    : profile.email.charAt(0).toUpperCase()
+  const initials = fullName ? fullName.charAt(0).toUpperCase() : profile.email.charAt(0).toUpperCase()
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
+  function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
     if (!file) return
 
-    // Client-side validation
     if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
       toast.error('Only JPG and PNG files are allowed')
       return
@@ -42,26 +45,17 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
       return
     }
 
-    // Show preview immediately
     const objectUrl = URL.createObjectURL(file)
     setPreviewUrl(objectUrl)
-
-    // Upload
     uploadAvatar(file)
   }
 
   async function uploadAvatar(file: File) {
     setIsUploading(true)
-
     try {
       const formData = new FormData()
       formData.append('avatar', file)
-
-      const res = await fetch('/api/profile/avatar', {
-        method: 'POST',
-        body: formData,
-      })
-
+      const res = await fetch('/api/profile/avatar', { method: 'POST', body: formData })
       const data = await res.json()
 
       if (!res.ok) {
@@ -72,27 +66,22 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
 
       setAvatarUrl(data.avatar_url)
       setPreviewUrl(null)
-      toast.success('Profile picture updated!')
+      toast.success('Profile picture updated')
       router.refresh()
-    } catch (err) {
-      console.error('[Avatar Upload]', err)
+    } catch (error) {
+      console.error('[Avatar Upload]', error)
       toast.error('Network error — please try again')
       setPreviewUrl(null)
     } finally {
       setIsUploading(false)
-      // Reset the input so the same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
   async function handleRemoveAvatar() {
     setIsRemoving(true)
-
     try {
-      const res = await fetch('/api/profile/avatar', {
-        method: 'DELETE',
-      })
-
+      const res = await fetch('/api/profile/avatar', { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json()
         toast.error(data.error ?? 'Failed to remove avatar')
@@ -103,117 +92,161 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
       setPreviewUrl(null)
       toast.success('Profile picture removed')
       router.refresh()
-    } catch (err) {
-      console.error('[Avatar Remove]', err)
+    } catch (error) {
+      console.error('[Avatar Remove]', error)
       toast.error('Network error — please try again')
     } finally {
       setIsRemoving(false)
     }
   }
 
+  async function handleSaveProfile(event: React.FormEvent) {
+    event.preventDefault()
+    const trimmedName = fullName.trim()
+    if (!trimmedName || Array.from(trimmedName).length > 80) {
+      toast.error('Name must be between 1 and 80 characters')
+      return
+    }
+    if (Array.from(bio).length > 200) {
+      toast.error('Bio must be 200 characters or fewer')
+      return
+    }
+
+    setIsSavingProfile(true)
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name: trimmedName, bio }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to update profile')
+        return
+      }
+
+      setFullName(data.profile.full_name)
+      setBio(data.profile.bio ?? '')
+      toast.success('Profile updated')
+      router.refresh()
+    } catch (error) {
+      console.error('[Profile Update]', error)
+      toast.error('Network error — please try again')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
   return (
-    <div className="space-y-10">
-      {/* Profile Picture Section */}
-      <section className="border border-outline-variant rounded-xl p-6 bg-surface-container-lowest">
-        <h2 className="text-title-md font-bold text-on-surface mb-1">
-          Profile Picture
-        </h2>
-        <p className="text-body-sm text-secondary mb-6">
-          JPG or PNG, max 300KB
-        </p>
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
+        <div className="mb-7 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="font-heading text-2xl font-bold text-on-surface">Public profile</h2>
+            <p className="mt-1 text-sm text-secondary">Your name, photo and bio are visible to other people.</p>
+          </div>
+          <Link href={`/profile/${profile.id}`} className="shrink-0 text-sm font-semibold text-primary hover:underline">
+            View profile
+          </Link>
+        </div>
 
-        <div className="flex items-center gap-6">
-          {/* Avatar with overlay */}
-          <div className="relative group">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-outline-variant bg-surface-container flex items-center justify-center">
-              {displayUrl ? (
-                <img
-                  src={displayUrl}
-                  alt="Profile"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-3xl font-bold text-on-surface-variant">
-                  {initials}
-                </span>
-              )}
-
-              {/* Upload spinner overlay */}
-              {isUploading && (
-                <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
-                  <Loader2 className="h-8 w-8 text-white animate-spin" />
-                </div>
+        <div className="grid gap-8 md:grid-cols-[180px_1fr]">
+          <div>
+            <div className="group relative mx-auto h-28 w-28 md:mx-0">
+              <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-outline-variant bg-indigo-50">
+                {displayUrl ? (
+                  <img src={displayUrl} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-3xl font-semibold text-indigo-700">{initials}</span>
+                )}
+                {isUploading && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45">
+                    <Loader2 className="h-7 w-7 animate-spin text-white" aria-label="Uploading profile picture" />
+                  </div>
+                )}
+              </div>
+              {!isUploading && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 opacity-0 transition-colors group-hover:bg-black/35 group-hover:opacity-100 focus-visible:bg-black/35 focus-visible:opacity-100"
+                  aria-label="Change profile picture"
+                >
+                  <Camera className="h-6 w-6 text-white" aria-hidden="true" />
+                </button>
               )}
             </div>
-
-            {/* Hover overlay */}
-            {!isUploading && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2 md:justify-start">
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer"
+                disabled={isUploading}
+                className="rounded-lg bg-primary-container px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
               >
-                <Camera className="h-6 w-6 text-white drop-shadow-md" />
+                {isUploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
               </button>
-            )}
+              {avatarUrl && !isUploading && (
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  disabled={isRemoving}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3.5 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {isRemoving ? 'Removing…' : 'Remove'}
+                </button>
+              )}
+            </div>
+            <p className="mt-3 text-center text-xs text-secondary md:text-left">JPG or PNG, maximum 300KB.</p>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" onChange={handleFileSelect} className="hidden" />
           </div>
 
-          {/* Action buttons */}
-          <div className="flex flex-col gap-2">
+          <form onSubmit={handleSaveProfile} className="space-y-5">
+            <div>
+              <label htmlFor="full-name" className="mb-1.5 block text-sm font-medium text-on-surface">Display name</label>
+              <input
+                id="full-name"
+                value={fullName}
+                onChange={(event) => {
+                  if (Array.from(event.target.value).length <= 80) setFullName(event.target.value)
+                }}
+                required
+                className="min-h-11 w-full rounded-lg border border-outline-variant bg-white px-3.5 py-2.5 text-sm text-on-surface focus:border-indigo-400"
+              />
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label htmlFor="bio" className="text-sm font-medium text-on-surface">Bio</label>
+                <span className="text-xs text-secondary">{Array.from(bio).length}/200</span>
+              </div>
+              <textarea
+                id="bio"
+                value={bio}
+                onChange={(event) => {
+                  if (Array.from(event.target.value).length <= 200) setBio(event.target.value)
+                }}
+                rows={5}
+                placeholder="Tell people a little about yourself and your creative work."
+                className="w-full resize-y rounded-lg border border-outline-variant bg-white px-3.5 py-2.5 text-sm leading-6 text-on-surface focus:border-indigo-400"
+              />
+            </div>
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="px-4 py-2 rounded-lg text-body-sm font-bold bg-primary text-on-primary hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+              type="submit"
+              disabled={isSavingProfile}
+              className="min-h-11 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
             >
-              {isUploading ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Upload Photo'}
+              {isSavingProfile ? 'Saving…' : 'Save profile'}
             </button>
-
-            {avatarUrl && !isUploading && (
-              <button
-                onClick={handleRemoveAvatar}
-                disabled={isRemoving}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-body-sm font-medium text-red-600 hover:bg-red-50 border border-red-200 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {isRemoving ? 'Removing...' : 'Remove'}
-              </button>
-            )}
-          </div>
-
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+          </form>
         </div>
       </section>
 
-      {/* Account Info Section (read-only display) */}
-      <section className="border border-outline-variant rounded-xl p-6 bg-surface-container-lowest">
-        <h2 className="text-title-md font-bold text-on-surface mb-4">
-          Account Info
-        </h2>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-body-sm font-medium text-secondary block mb-1">
-              Name
-            </label>
-            <p className="text-body-md text-on-surface font-medium">
-              {profile.fullName || '—'}
-            </p>
-          </div>
-
-          <div>
-            <label className="text-body-sm font-medium text-secondary block mb-1">
-              Email
-            </label>
-            <p className="text-body-md text-on-surface font-medium">
-              {profile.email}
-            </p>
-          </div>
+      <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
+        <h2 className="font-heading text-xl font-bold text-on-surface">Account information</h2>
+        <p className="mt-1 text-sm text-secondary">Your email is private and used for account access and notifications.</p>
+        <div className="mt-5 rounded-lg border border-outline-variant bg-gray-50 px-4 py-3">
+          <p className="text-xs font-medium text-secondary">Email address</p>
+          <p className="mt-1 break-all text-sm font-medium text-on-surface">{profile.email}</p>
         </div>
       </section>
     </div>

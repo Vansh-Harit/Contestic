@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { X, Send, Loader2, Wifi, WifiOff } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2, Send, Wifi, WifiOff, X } from 'lucide-react'
 import { getChatChannelName } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
@@ -15,6 +15,8 @@ interface ChatMessage {
   created_at: string
   read_at: string | null
 }
+
+type RealtimeChatMessage = Pick<ChatMessage, 'id' | 'sender_id' | 'content' | 'created_at' | 'read_at'>
 
 interface ChatPanelProps {
   contestId: string
@@ -46,7 +48,6 @@ export default function ChatPanel({
   const conversationId = getChatChannelName(contestId, currentUserId, recipientId)
 
   useEffect(() => {
-    // 1. Load message history from DB
     const loadMessages = async () => {
       setIsLoading(true)
       try {
@@ -55,15 +56,14 @@ export default function ChatPanel({
           const data = await res.json()
           setMessages(data.messages ?? [])
         }
-      } catch (err) {
-        console.error('[Chat] Failed to load messages:', err)
+      } catch (error) {
+        console.error('[Chat] Failed to load messages:', error)
       }
       setIsLoading(false)
     }
 
     loadMessages()
 
-    // 2. Subscribe to Supabase Realtime for new messages
     const supabase = createClient()
     const channel = supabase
       .channel(`chat_${conversationId}`)
@@ -73,11 +73,11 @@ export default function ChatPanel({
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`
+          filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          const incoming = payload.new as any
-          const msg: ChatMessage = {
+          const incoming = payload.new as RealtimeChatMessage
+          const message: ChatMessage = {
             id: incoming.id,
             sender_id: incoming.sender_id,
             sender_name: incoming.sender_id === currentUserId ? currentUserName : recipientName,
@@ -86,23 +86,20 @@ export default function ChatPanel({
             created_at: incoming.created_at,
             read_at: incoming.read_at,
           }
-          setMessages(prev =>
-            prev.some(m => m.id === msg.id)
-              ? prev
-              : [...prev.filter(m => !m.id.startsWith('temp_')), msg]
+          setMessages((previous) =>
+            previous.some((existing) => existing.id === message.id)
+              ? previous
+              : [...previous.filter((existing) => !existing.id.startsWith('temp_')), message],
           )
-        }
+        },
       )
-      .subscribe((status) => {
-        setIsConnected(status === 'SUBSCRIBED')
-      })
+      .subscribe((status) => setIsConnected(status === 'SUBSCRIBED'))
 
     return () => {
       supabase.removeChannel(channel)
     }
   }, [conversationId, currentUserId, currentUserName, recipientName])
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -110,8 +107,6 @@ export default function ChatPanel({
   const handleSend = async () => {
     if (!input.trim() || isChatDisabled || isSending) return
     const content = input.trim()
-
-    // Optimistic update
     const optimistic: ChatMessage = {
       id: `temp_${Date.now()}`,
       sender_id: currentUserId,
@@ -121,7 +116,8 @@ export default function ChatPanel({
       created_at: new Date().toISOString(),
       read_at: null,
     }
-    setMessages(prev => [...prev, optimistic])
+
+    setMessages((previous) => [...previous, optimistic])
     setInput('')
     setIsSending(true)
 
@@ -129,202 +125,76 @@ export default function ChatPanel({
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contest_id: contestId,
-          recipient_id: recipientId,
-          content,
-        }),
+        body: JSON.stringify({ contest_id: contestId, recipient_id: recipientId, content }),
       })
-
       if (!res.ok) {
-        setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-        const err = await res.json()
-        toast.error(err.error || 'Message failed to send')
+        setMessages((previous) => previous.filter((message) => message.id !== optimistic.id))
+        const error = await res.json()
+        toast.error(error.error || 'Message failed to send')
       }
     } catch {
-      setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+      setMessages((previous) => previous.filter((message) => message.id !== optimistic.id))
       toast.error('Message failed to send')
     }
 
     setIsSending(false)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
       handleSend()
     }
   }
 
-  const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+  const formatTime = (date: string) => new Date(date).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
   return (
-    <div style={{
-      position: 'fixed',
-      right: 0,
-      bottom: 0,
-      width: 360,
-      height: 480,
-      background: '#FFFFFF',
-      borderLeft: '1px solid #E5E7EB',
-      borderTop: '1px solid #E5E7EB',
-      boxShadow: '0 -4px 24px rgba(0,0,0,0.12)',
-      zIndex: 100,
-      display: 'flex',
-      flexDirection: 'column',
-      borderTopLeftRadius: 12,
-      fontFamily: 'system-ui, sans-serif',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        borderBottom: '1px solid #E5E7EB',
-        background: '#F9FAFB',
-        borderTopLeftRadius: 12,
-      }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
-              {recipientName}
-            </span>
-            <span style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: isConnected ? '#22C55E' : '#9CA3AF',
-              display: 'inline-block',
-            }} />
+    <section className="fixed inset-x-3 bottom-3 z-[100] flex h-[min(520px,calc(100vh-24px))] flex-col overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-xl sm:inset-x-auto sm:right-4 sm:w-[380px]">
+      <header className="flex items-center justify-between border-b border-outline-variant bg-gray-50 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate font-heading text-lg font-semibold text-on-surface">{recipientName}</h2>
+            <span className={`h-2 w-2 shrink-0 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-gray-400'}`} aria-hidden="true" />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-            {isConnected ? (
-              <Wifi style={{ width: 10, height: 10, color: '#22C55E' }} />
-            ) : (
-              <WifiOff style={{ width: 10, height: 10, color: '#9CA3AF' }} />
-            )}
-            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-              {isConnected ? 'Live' : 'Connecting...'}
-            </span>
+          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-secondary">
+            {isConnected ? <Wifi className="h-3 w-3 text-emerald-600" aria-hidden="true" /> : <WifiOff className="h-3 w-3" aria-hidden="true" />}
+            <span>{isConnected ? 'Live' : 'Connecting…'}</span>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 4,
-            color: '#6B7280',
-          }}
-        >
-          <X style={{ width: 18, height: 18 }} />
+        <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-white hover:text-on-surface" aria-label="Close chat">
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
-      </div>
+      </header>
 
-      {/* Chat disabled banner */}
       {isChatDisabled && (
-        <div style={{
-          padding: '8px 16px',
-          background: '#FEF2F2',
-          borderBottom: '1px solid #FECACA',
-          fontSize: 12,
-          color: '#991B1B',
-          textAlign: 'center',
-        }}>
-          Contest ended — chat is no longer available
+        <div className="border-b border-red-100 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
+          This contest has ended. Chat is no longer available.
         </div>
       )}
 
-      {/* Messages area */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-      }}>
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" aria-live="polite">
         {isLoading ? (
-          <>
-            {[1, 2, 3].map(i => (
-              <div key={i} style={{
-                height: 40,
-                borderRadius: 12,
-                background: '#F3F4F6',
-                width: i % 2 === 0 ? '60%' : '75%',
-                alignSelf: i % 2 === 0 ? 'flex-end' : 'flex-start',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }} />
-            ))}
-          </>
+          [1, 2, 3].map((item) => (
+            <div key={item} className={`h-10 animate-pulse rounded-xl bg-gray-100 ${item % 2 === 0 ? 'ml-auto w-3/5' : 'w-3/4'}`} />
+          ))
         ) : messages.length === 0 ? (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#9CA3AF',
-            fontSize: 13,
-          }}>
-            No messages yet. Say hello! 👋
-          </div>
+          <div className="flex flex-1 items-center justify-center text-center text-sm text-secondary">No messages yet.</div>
         ) : (
-          messages.map(msg => {
-            const isOwn = msg.sender_id === currentUserId
+          messages.map((message) => {
+            const isOwn = message.sender_id === currentUserId
             return (
-              <div
-                key={msg.id}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: isOwn ? 'flex-end' : 'flex-start',
-                  maxWidth: '80%',
-                  alignSelf: isOwn ? 'flex-end' : 'flex-start',
-                }}
-              >
-                {!isOwn && (
-                  <span style={{
-                    fontSize: 10,
-                    color: '#9CA3AF',
-                    marginBottom: 2,
-                    fontWeight: 500,
-                  }}>
-                    {msg.sender_name}
-                  </span>
-                )}
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 12,
-                  background: isOwn ? '#FEF3C7' : '#F3F4F6',
-                  color: '#111827',
-                  fontSize: 13,
-                  lineHeight: 1.4,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}>
-                  {msg.content}
+              <div key={message.id} className={`flex max-w-[82%] flex-col ${isOwn ? 'ml-auto items-end' : 'items-start'}`}>
+                {!isOwn && <span className="mb-1 text-[11px] font-medium text-secondary">{message.sender_name}</span>}
+                <div className={`break-words rounded-xl px-3 py-2 text-sm leading-5 text-on-surface ${isOwn ? 'bg-indigo-100' : 'bg-gray-100'}`}>
+                  {message.content}
                 </div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  marginTop: 2,
-                }}>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>
-                    {formatTime(msg.created_at)}
-                  </span>
-                  {isOwn && msg.read_at && (
-                    <span style={{ fontSize: 10, color: '#22C55E' }}>
-                      ✓ Seen
-                    </span>
-                  )}
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-400">
+                  <span>{formatTime(message.created_at)}</span>
+                  {isOwn && message.read_at && <span className="text-emerald-700">Seen</span>}
                 </div>
               </div>
             )
@@ -333,71 +203,30 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Input area */}
-      <div style={{
-        borderTop: '1px solid #E5E7EB',
-        padding: '8px 12px',
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: 8,
-        background: '#FFFFFF',
-      }}>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value.slice(0, 1000))}
-          onKeyDown={handleKeyDown}
-          placeholder={isChatDisabled ? 'Chat disabled' : 'Type a message...'}
-          disabled={isChatDisabled}
-          rows={1}
-          style={{
-            flex: 1,
-            resize: 'none',
-            border: '1px solid #E5E7EB',
-            borderRadius: 8,
-            padding: '8px 12px',
-            fontSize: 13,
-            outline: 'none',
-            fontFamily: 'inherit',
-            lineHeight: 1.4,
-            maxHeight: 80,
-            overflowY: 'auto',
-            opacity: isChatDisabled ? 0.5 : 1,
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!input.trim() || isSending || isChatDisabled}
-          style={{
-            background: !input.trim() || isSending || isChatDisabled ? '#E5E7EB' : '#F59E0B',
-            border: 'none',
-            borderRadius: 8,
-            padding: '8px 10px',
-            cursor: !input.trim() || isSending || isChatDisabled ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {isSending ? (
-            <Loader2 style={{ width: 16, height: 16, color: '#6B7280', animation: 'spin 1s linear infinite' }} />
-          ) : (
-            <Send style={{ width: 16, height: 16, color: !input.trim() || isChatDisabled ? '#9CA3AF' : '#000' }} />
-          )}
-        </button>
-      </div>
-
-      {/* Character count */}
-      {input.length > 800 && (
-        <div style={{
-          textAlign: 'right',
-          paddingRight: 12,
-          paddingBottom: 4,
-          fontSize: 10,
-          color: input.length > 950 ? '#DC2626' : '#9CA3AF',
-        }}>
-          {input.length}/1000
+      <div className="border-t border-outline-variant bg-white p-3">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value.slice(0, 1000))}
+            onKeyDown={handleKeyDown}
+            placeholder={isChatDisabled ? 'Chat disabled' : 'Type a message…'}
+            disabled={isChatDisabled}
+            rows={1}
+            className="max-h-24 min-h-10 flex-1 resize-none overflow-y-auto rounded-lg border border-outline-variant px-3 py-2 text-sm leading-5 focus:border-indigo-400"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || isSending || isChatDisabled}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white transition-colors hover:bg-indigo-700"
+            aria-label="Send message"
+          >
+            {isSending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+          </button>
         </div>
-      )}
-    </div>
+        {input.length > 800 && (
+          <p className={`mt-1 text-right text-[10px] ${input.length > 950 ? 'text-red-600' : 'text-secondary'}`}>{input.length}/1000</p>
+        )}
+      </div>
+    </section>
   )
 }

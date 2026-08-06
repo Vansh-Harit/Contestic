@@ -1,0 +1,3 @@
+-- Historical migration marker.
+-- The reconstructed pre-hardening structure is consolidated in
+-- 20260610081812_create_profiles_table.sql.

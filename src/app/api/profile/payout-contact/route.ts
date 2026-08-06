@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -11,6 +12,8 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const admin = createAdminClient()
 
   let body: { upi_id?: string; prefer_email?: boolean }
   try {
@@ -37,12 +40,12 @@ export async function POST(request: Request) {
   }
 
   // Update profile with UPI ID
-  const updateData: Record<string, any> = {}
+  const updateData: { upi_id?: string } = {}
   if (upi_id) {
     updateData.upi_id = upi_id.trim()
   }
 
-  const { error } = await supabase
+  const { error } = await admin
     .from('profiles')
     .update(updateData)
     .eq('id', user.id)
@@ -57,7 +60,7 @@ export async function POST(request: Request) {
 
   // Also update any pending payout_requests for this winner
   if (upi_id) {
-    await supabase
+    await admin
       .from('payout_requests')
       .update({
         winner_upi: upi_id.trim(),

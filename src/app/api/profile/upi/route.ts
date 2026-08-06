@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -13,6 +14,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const admin = createAdminClient()
+
   // 2. Parse body
   let body: { upi_id: string }
   try {
@@ -21,17 +24,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { upi_id } = body
+  const upiId = typeof body.upi_id === 'string' ? body.upi_id.trim() : ''
 
   // 3. Validate
-  if (!upi_id || typeof upi_id !== 'string' || !upi_id.includes('@') || upi_id.length < 5 || upi_id.length > 50) {
+  if (!upiId || !upiId.includes('@') || upiId.length < 5 || upiId.length > 50) {
     return NextResponse.json({ error: 'Invalid UPI ID format' }, { status: 400 })
   }
 
   // 4. Update profiles
-  const { error: profileError } = await supabase
+  const { error: profileError } = await admin
     .from('profiles')
-    .update({ upi_id: upi_id })
+    .update({ upi_id: upiId })
     .eq('id', user.id)
 
   if (profileError) {
@@ -39,10 +42,10 @@ export async function POST(request: Request) {
   }
 
   // 5. Update payout_requests
-  const { error: payoutError } = await supabase
+  const { error: payoutError } = await admin
     .from('payout_requests')
     .update({
-      winner_upi: upi_id,
+      winner_upi: upiId,
       status: 'pending_transfer'
     })
     .eq('winner_id', user.id)

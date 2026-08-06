@@ -1,0 +1,56 @@
+# Migration Board
+
+Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGISTER.md`.
+
+## Baseline
+
+- [x] M-01 Confirm clean Git status and retain `66a6dd6` as rollback baseline. Verified 2026-07-28: clean worktree; baseline `66a6dd676eb1ccd9c82eac5b3a4fbb734288a5e5` remains an ancestor of HEAD `f811eb8ec5f2c76152913d54794559164febc566`.
+- [x] M-02 Select hosting target and create a staging project; record the decision in `docs/DEPLOYMENT_NOTES.md`. Verified 2026-07-28: Netlify `contestic-staging` created in the Contestic team, restricted to `Vansh-Harit/Contestic`, with no custom domain or production credentials.
+- [x] M-03 Use the existing development identities in Contestic instead of database branches or staging-only identities, per the user's no-Supabase-Pro decision. The user performs manual role testing.
+
+## Database and security
+
+- [ ] M-04 Baseline export is prepared in `supabase/migrations/20260610081812_create_profiles_table.sql` with historical marker files and hardening filenames aligned to the live Supabase migration versions. No live database write was made. C-01 remains `verify` until the user requests and reports a successful blank-database rebuild.
+- [ ] M-04a Before any future database push, handle local migration `20260729151427_authorization_reset.sql`: the live objects already match it, but its version is absent from MCP migration history (C-16). Applying/recording or repairing history requires separate explicit approval.
+- [x] M-05 Audit RLS, `contests_with_counts`, and `select_winner()`. Per the user's no-database-branch decision, this was performed against Contestic with migrations and rollback-tested SQL. Verified 2026-07-28; S-01 resolved.
+- [x] M-06 Remove or production-gate the deliberate error route. Resolve C-03. Verified 2026-07-28: `src/app/api/test-error/route.ts` returns 404; TypeScript and focused lint pass.
+- [ ] M-07 Finish user-run authorization verification. The approved migration `20260729151427_authorization_reset.sql` was applied on 2026-07-29; persisted grants/functions and Supabase advisors showed 0 errors. Entry-open entry, locked brief, chat, and permitted-user download succeeded. Withdrawal was subsequently removed by product decision. The creator-review Anonymous-name regression was repaired locally on 2026-07-31 and needs a refresh check. Post-entry-period unlock, judging, and winner selection remain pending before C-14 is resolved.
+- [x] M-07a Empty contest chat retest passed on 2026-07-30: the user confirmed chat works after the C-17 repair.
+
+## Money and lifecycle
+
+- [ ] M-08 Task 7 payment hardening is implemented locally: Checkout verification, fail-closed order persistence, replay/out-of-order reconciliation, and idempotent full-refund support. Run the user test-mode checklist for success, browser-close, failure/retry, duplicate, and out-of-order events before resolving S-03/C-19.
+- [ ] M-08a Retest C-24 with one fresh Razorpay test-mode contest: fail or dismiss Checkout, continue the saved draft, confirm the same contest/order is reused, then pay successfully and confirm only that contest becomes active. Existing duplicate test rows remain untouched.
+- [ ] M-09 User tests final entry, post-entry-period unlock, submit/description review, judging, winner, cancel/refund, and payout transitions at deadline boundaries using the supplied manual test cards. The stale `active` versus effective `judging` winner-selection 400 was repaired locally on 2026-08-01 and awaits user retest (C-20); description review awaits C-21 verification. Also verify C-22 countdown visibility and that receiving every submission early no longer changes the fixed submission deadline (C-23). Codex fixes reported defects but does not run these checks unless explicitly asked.
+- [ ] M-10 Task 7 now keeps the payout transfer identifier empty until an administrator records a real 3-100 character UPI/transaction reference, and retries reconcile partial state. Confirm the UPI collection, manual transfer, reference, notification, and admin audit trail with user evidence.
+
+## Operations
+
+- [ ] M-11 Migration `20260801201639_create_email_delivery_outbox.sql` was applied to Contestic through Supabase MCP on 2026-08-01. The private outbox stores compact template payloads capped at 8 KB rather than rendered email HTML, and removes sent records after 90 days. Manually invoke the cron against controlled fixture states and repeat it to verify C-23/S-04 before checking this item. Host scheduling remains deferred to Task 12.
+- [ ] M-12 Task 9 post-winner locking and retryable contest-scoped R2 cleanup are implemented locally. Migration `20260802120000_add_post_winner_cleanup_state.sql` (SHA-256 `6250074E13D6A9319082E0866D943888242E504A78ADA26CAA824D2798EAFAF4`) was applied through Supabase MCP on 2026-08-02. Manually verify creator/contestant/unrelated access, successful deletion, pending retry behavior, stored-link hiding, immediate chat lock and 90-day purge scheduling. The configured bucket is reachable/listable; public-access shutdown remains unverified (C-13/S-05).
+- [ ] M-13 The replacement Resend API key authenticated on 2026-08-06, but the configured sending domain is not present in the account. Verify a sender/domain (or explicitly approve a constrained deployed-test mode), then run one controlled delivery, provider-idempotency, retry-recovery and UTR-template check.
+- [ ] M-14 Upstash connectivity and one Sentry ingestion event passed on 2026-08-06. Still verify rate-limit behavior, alert routing, production environment naming and Sentry source-map upload after `SENTRY_AUTH_TOKEN` is configured.
+
+## Profiles, authentication and chat
+
+- [ ] M-20 Migration `20260803143724_add_profile_bio_and_chat_scope` (local SHA-256 `72D67B5028C57951F9BE847E2D8F2B3D4A6A60E9FB409CB947740D35746AAB06`) was applied through Supabase MCP on 2026-08-03. Metadata confirms the bio column/constraint, message index, public-profile grants, and scoped chat policy. Run the Task 10 manual role checks before resolving C-11/C-25.
+- [ ] M-20a Verify Google/Supabase redirect allowlists, leaked-password protection, administrator assignment, and real login/session behavior before resolving S-02.
+- [ ] M-20b Configure Supabase Auth custom SMTP and the exact deployed callback allowlist, then manually verify password recovery for an existing email, an unknown email, an expired/used link, mismatched passwords and successful sign-in with the new password before resolving C-27.
+
+## Quality gates
+
+- [x] M-15 Lint passes with zero errors. Eleven image-optimization warnings remain intentionally recorded for the later image-delivery task; generated `.netlify/` output is ignored. Reverified 2026-08-06.
+- [x] M-16 Shared submission types use `file_urls`; joined-profile arrays are normalized, TypeScript passes, and C-05 is resolved.
+- [ ] M-17 Keep C-04 recorded as an accepted launch risk unless the user explicitly requests automated coverage for payment, authorization, lifecycle, and cron paths.
+- [x] M-18 Quality gate re-passed 2026-08-06 on Next.js 16.3.0: production build, TypeScript, lint, 16 focused authorization/entry/file tests and diff check pass; production dependency audit reports zero vulnerabilities. E2E action testing remains under M-09.
+- [ ] M-23 Local browser review passed on 2026-08-06 for anonymous, contestant/creator, administrator, legal, profile, password-recovery, judging/completed, chat and 390px views with no console errors or horizontal overflow. Still verify submission review, winner/payment/upload/download actions and deadline transitions before resolving C-26.
+- [ ] M-23a Review and approve the Terms and Privacy content with the final operator legal identity, jurisdiction and contact details before production launch (S-09).
+
+## Launch
+
+- [ ] M-19 Update operational README and runbook. Resolve C-08.
+- [ ] M-19a Review and maintain `docs/PRODUCTION_LAUNCH_AND_SCALE_GUIDE.md` as the single quiet-beta, custom-domain, provider migration, cost and scaling runbook.
+- [ ] M-24 Task 12 Netlify configuration is implemented locally. Fresh project `contestic-app` is linked and its production environment was populated on 2026-08-06 without exposing values; the app URL targets Netlify and cron is enabled for the approved month-long test. Remove team SSO, complete the first production deploy and verify Linux packaging/runtime/auth/payment/upload behavior. The older `contestic-staging` project remains pending manual deletion after the fresh project is confirmed.
+- [ ] M-24a The owner approved `NETLIFY_SCHEDULED_JOBS_ENABLED=true` for the month-long production-context end-to-end test. Run the function once, confirm the lifecycle route completes within 55 seconds, inspect background/API logs, and confirm a later automatic six-hour invocation. Set the flag false only as the cron rollback switch during an incident.
+- [ ] M-21 Obtain explicit approval for live credentials, DNS, and deployment.
+- [ ] M-22 Deploy production once, smoke test, and monitor logs/Sentry/Razorpay.

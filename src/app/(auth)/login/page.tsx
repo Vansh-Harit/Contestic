@@ -1,16 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const authError = searchParams.get('error')
+  const linkError =
+    authError === 'auth_callback_error' || authError === 'invalid_recovery_link'
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -24,12 +28,18 @@ export default function LoginPage() {
     const supabase = createClient()
     
     if (isSignUp) {
+      const trimmedName = fullName.trim()
+      if (!trimmedName || Array.from(trimmedName).length > 80) {
+        toast.error('Name must be between 1 and 80 characters')
+        setIsLoading(false)
+        return
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            full_name: fullName,
+            full_name: trimmedName,
           },
         },
       })
@@ -58,16 +68,16 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background flex flex-col justify-center items-center px-container-padding-mobile py-12 font-sans">
-      <div className="w-full max-w-[420px] bg-surface-container-lowest border border-outline-variant p-8 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.02)]">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-[#F8F7FF] px-container-padding-mobile py-12 font-sans">
+      <div className="w-full max-w-[440px] rounded-2xl border border-outline-variant bg-white p-6 shadow-sm sm:p-8">
         <header className="text-center mb-8">
           <Link
             href="/"
-            className="text-headline-md font-heading font-bold text-primary tracking-tight block mb-4"
+            className="mb-5 block font-heading text-2xl font-bold tracking-tight text-primary"
           >
             Contestic
           </Link>
-          <h1 className="text-headline-sm font-heading font-bold text-on-surface mb-2">
+          <h1 className="mb-2 font-heading text-3xl font-bold text-on-surface">
             {isSignUp ? 'Create your account' : 'Welcome back'}
           </h1>
           <p className="text-body-sm text-secondary">
@@ -78,6 +88,14 @@ export default function LoginPage() {
         </header>
 
         <div className="space-y-6">
+        {linkError && (
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            This sign-in or password-reset link is invalid or expired. Request a new reset link.
+          </p>
+        )}
         {/* Google Sign-In */}
         <button
           type="button"
@@ -91,7 +109,7 @@ export default function LoginPage() {
             })
             if (error) toast.error(error.message)
           }}
-          className="w-full flex items-center justify-center gap-3 bg-transparent border border-outline-variant rounded-lg py-3 px-4 text-body-md font-semibold text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer"
+          className="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-outline-variant bg-white px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-gray-50"
         >
           <svg width="20" height="20" viewBox="0 0 48 48">
             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -104,15 +122,15 @@ export default function LoginPage() {
 
         {/* Divider */}
         <div className="flex items-center gap-4">
-          <div className="flex-1 h-px bg-outline-variant" />
+          <div className="h-px flex-1 bg-outline-variant" />
           <span className="text-body-sm text-secondary font-medium">or</span>
-          <div className="flex-1 h-px bg-outline-variant" />
+          <div className="h-px flex-1 bg-outline-variant" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {isSignUp && (
             <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-label-caps uppercase tracking-wider text-secondary font-bold text-xs">
+              <Label htmlFor="fullName" className="text-sm font-medium text-on-surface">
                 Full Name
               </Label>
               <Input
@@ -121,14 +139,15 @@ export default function LoginPage() {
                 placeholder="John Doe"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
+                maxLength={80}
                 required
-                className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+                className="min-h-11 rounded-lg border-outline-variant bg-white"
               />
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-label-caps uppercase tracking-wider text-secondary font-bold text-xs">
+            <Label htmlFor="email" className="text-sm font-medium text-on-surface">
               Email Address
             </Label>
             <Input
@@ -138,22 +157,22 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+              className="min-h-11 rounded-lg border-outline-variant bg-white"
             />
           </div>
 
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <Label htmlFor="password" className="text-label-caps uppercase tracking-wider text-secondary font-bold text-xs">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-sm font-medium text-on-surface">
                 Password
               </Label>
               {!isSignUp && (
-                <button
-                  type="button"
-                  className="text-body-sm font-semibold text-primary hover:underline"
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-semibold text-primary transition-colors hover:text-indigo-700"
                 >
-                  Forgot Password?
-                </button>
+                  Forgot password?
+                </Link>
               )}
             </div>
             <Input
@@ -163,21 +182,21 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="bg-transparent border border-outline-variant rounded-lg focus:border-primary-container outline-none"
+              className="min-h-11 rounded-lg border-outline-variant bg-white"
             />
           </div>
 
           <Button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-primary-container text-on-primary-container py-3 rounded-lg font-bold text-body-md hover:opacity-90 transition-opacity cursor-pointer"
+            className="min-h-12 w-full rounded-lg bg-primary-container py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
           >
             {isLoading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </Button>
         </form>
         </div>
 
-        <div className="mt-6 pt-6 border-t border-outline-variant text-center">
+        <div className="mt-6 border-t border-outline-variant pt-6 text-center">
           <button
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-body-sm text-secondary hover:text-primary transition-colors font-semibold"
@@ -187,5 +206,13 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   )
 }

@@ -9,21 +9,12 @@ export async function GET(
   const supabase = await createClient()
 
   const { data: contest, error } = await supabase
-    .from('contests')
-    .select(
-      '*, profiles!lister_id(id, full_name, avatar_url), submissions(count)'
-    )
-    .eq('id', id)
+    .rpc('get_visible_contests', { p_contest_id: id })
     .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 404 })
   }
 
-  const formatted = {
-    ...contest,
-    submission_count: contest.submissions?.[0]?.count ?? 0,
-  }
-
-  return NextResponse.json(formatted)
+  return NextResponse.json(contest)
 }
