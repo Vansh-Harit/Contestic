@@ -6,18 +6,31 @@ export default async function ListerDashboardPage() {
   const supabase = await createClient()
 
   const {
-    data: { user },
+    data: claimsData,
     error: authError
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getClaims()
+  const userId = claimsData?.claims?.sub
 
-  if (authError || !user) {
+  if (authError || !userId) {
     redirect('/login')
+  }
+
+  if (process.env.DASHBOARD_READ_PROJECTIONS_ENABLED === 'true') {
+    const { data, error: projectionError } = await supabase.rpc(
+      'get_hosted_contests_dashboard'
+    )
+
+    if (!projectionError && data) {
+      return <ListerDashboardClient contests={data} />
+    }
+
+    console.error('[ListerDashboard] Read projection failed:', projectionError?.message)
   }
 
   const { data: contests, error: queryError } = await supabase
     .from('contests')
     .select('*, profiles!lister_id(full_name, avatar_url), submissions(count), contest_entries(count)')
-    .eq('lister_id', user.id)
+    .eq('lister_id', userId)
     .order('created_at', { ascending: false })
 
   if (queryError) {
@@ -31,8 +44,6 @@ export default async function ListerDashboardPage() {
     lister_name: contest.profiles?.full_name ?? null,
     lister_avatar: contest.profiles?.avatar_url ?? null,
   }))
-
-  console.log('[ListerDashboard] User:', user.id, '| Contests:', contestList.length)
 
   return (
     <ListerDashboardClient 

@@ -27,11 +27,11 @@ const sections = [
   },
   {
     title: 'Your choices',
-    body: 'You can update your public name, profile photo and bio from Settings. You may contact support to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.',
+    body: 'You can update your public name, profile photo and bio from Settings. You may contact contestic.support@gmail.com to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.',
   },
   {
     title: 'Security and changes',
-    body: 'Contestic uses access controls and service-side authorization intended to protect private information, but no online service can guarantee absolute security. This policy may change as the product or applicable requirements evolve. The operator identity, governing jurisdiction and permanent privacy contact will be published before Contestic moves from controlled testing to a general public launch.',
+    body: 'Contestic uses access controls and service-side authorization intended to protect private information, but no online service can guarantee absolute security. This policy may change as the product or applicable requirements evolve. Privacy questions may be sent to contestic.support@gmail.com. The operator identity and governing jurisdiction will be published before Contestic moves from controlled testing to a general public launch.',
   },
 ]
 
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
       <header className="mt-6 border-b border-outline-variant pb-8">
         <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Legal</p>
         <h1 className="mt-2 font-heading text-4xl font-bold text-on-surface">Privacy policy</h1>
-        <p className="mt-3 text-sm text-secondary">Effective 3 August 2026</p>
+        <p className="mt-3 text-sm text-secondary">Effective 7 August 2026</p>
       </header>
       <div className="mt-8 space-y-8">
         {sections.map((section) => (

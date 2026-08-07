@@ -11,11 +11,11 @@ const sections = [
   },
   {
     title: '3. Payments, fees and payouts',
-    body: 'Before a contest goes live, the host pays the advertised winner prize plus a 2.5% Contestic platform fee. For example, a ₹1,000 prize requires a ₹1,025 payment and the selected winner remains eligible for the ₹1,000 prize. Winner payouts are manual UPI transfers after a valid winner is selected and provides the required payout information. Contestic records the transfer reference or UTR as payment evidence.',
+    body: 'Before a contest goes live, the host pays the advertised winner prize plus a 5% Contestic platform fee. The fee covers platform operations, payment processing costs and contest administration; it is not a separate fee charged by Razorpay. For example, a ₹1,000 prize requires a ₹1,050 payment and the selected winner remains eligible for the ₹1,000 prize. Winner payouts are manual UPI transfers after a valid winner is selected and provides the required payout information. Contestic records the transfer reference or UTR as payment evidence.',
   },
   {
     title: '4. Cancellations and contest outcomes',
-    body: 'A live contest cannot be cancelled by the host. If the submission period ends with zero submissions, including where users entered but nobody submitted, the host is eligible for a full refund of the prize and the 2.5% platform fee. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
+    body: 'A live contest cannot be cancelled by the host. If the submission period ends with zero submissions, including where users entered but nobody submitted, the host is eligible for a full refund of the prize and the 5% platform fee. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
   },
   {
     title: '5. Submissions and intellectual property',
@@ -31,7 +31,7 @@ const sections = [
   },
   {
     title: '8. Changes and contact',
-    body: 'These terms may be updated as the product and its legal requirements evolve. Material changes will be reflected by a new effective date. The operator identity, governing jurisdiction and permanent support contact will be published before Contestic moves from controlled testing to a general public launch.',
+    body: 'These terms may be updated as the product and its legal requirements evolve. Material changes will be reflected by a new effective date. Questions may be sent to contestic.support@gmail.com. The operator identity and governing jurisdiction will be published before Contestic moves from controlled testing to a general public launch.',
   },
 ]
 
@@ -42,7 +42,7 @@ export default function TermsPage() {
       <header className="mt-6 border-b border-outline-variant pb-8">
         <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Legal</p>
         <h1 className="mt-2 font-heading text-4xl font-bold text-on-surface">Terms and conditions</h1>
-        <p className="mt-3 text-sm text-secondary">Effective 3 August 2026</p>
+        <p className="mt-3 text-sm text-secondary">Effective 7 August 2026</p>
       </header>
       <div className="mt-8 space-y-8">
         {sections.map((section) => (

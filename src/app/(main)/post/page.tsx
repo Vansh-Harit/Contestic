@@ -16,6 +16,7 @@ import {
   MAX_PRIZE_INR,
   MIN_ENTRIES,
   MAX_ENTRIES,
+  PLATFORM_FEE_PERCENT,
 } from '@/lib/constants'
 
 export default function PostContestPage() {
@@ -54,13 +55,22 @@ export default function PostContestPage() {
               step: savedStep,
               timestamp,
               contestId,
+              feePercent,
             } = JSON.parse(saved)
             // Check if less than 2 days old (2 * 24 * 60 * 60 * 1000 = 172800000 ms)
             if (Date.now() - timestamp < 172800000) {
               setFormData(savedData)
               setStep(savedStep)
-              setDraftContestId(typeof contestId === 'string' ? contestId : null)
-              toast.success('Restored your draft in progress!', { position: 'top-center' })
+              const pricingIsCurrent = feePercent === PLATFORM_FEE_PERCENT
+              setDraftContestId(
+                pricingIsCurrent && typeof contestId === 'string' ? contestId : null
+              )
+              toast.success(
+                pricingIsCurrent
+                  ? 'Restored your draft in progress!'
+                  : `Draft restored with the current ${PLATFORM_FEE_PERCENT}% platform fee.`,
+                { position: 'top-center' }
+              )
             } else {
               localStorage.removeItem('contestic_contest_draft')
             }
@@ -86,6 +96,7 @@ export default function PostContestPage() {
       step,
       timestamp: Date.now(),
       contestId: draftContestId,
+      feePercent: PLATFORM_FEE_PERCENT,
     }
     localStorage.setItem('contestic_contest_draft', JSON.stringify(draft))
   }, [formData, step, draftLoaded, draftContestId])
@@ -444,6 +455,21 @@ export default function PostContestPage() {
           <div className="max-w-2xl space-y-6 rounded-2xl border border-outline-variant bg-white p-5 shadow-sm md:p-6">
             <div className="flex flex-col gap-2">
               <label className="text-label-caps uppercase tracking-widest text-secondary font-bold text-xs">
+                Contest Title
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Brand Name for a Minimalist Furniture Store"
+                value={formData.title}
+                onChange={(e) => updateField('title', e.target.value)}
+                className="w-full p-4 bg-transparent border border-outline-variant rounded-lg focus:outline-none focus:border-primary-container font-body-md transition-all outline-none"
+              />
+              <span className="text-xs text-secondary">
+                {formData.title.length}/100 characters
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-label-caps uppercase tracking-widest text-secondary font-bold text-xs">
                 Public Description
               </label>
               <textarea
@@ -460,21 +486,6 @@ export default function PostContestPage() {
               </div>
               <span className="text-xs text-secondary italic">
                 This is the ONLY thing people see before entering. Keep it intriguing but don&apos;t reveal too much.
-              </span>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-label-caps uppercase tracking-widest text-secondary font-bold text-xs">
-                Contest Title
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Brand Name for a Minimalist Furniture Store"
-                value={formData.title}
-                onChange={(e) => updateField('title', e.target.value)}
-                className="w-full p-4 bg-transparent border border-outline-variant rounded-lg focus:outline-none focus:border-primary-container font-body-md transition-all outline-none"
-              />
-              <span className="text-xs text-secondary">
-                {formData.title.length}/100 characters
               </span>
             </div>
             <div className="flex flex-col gap-2">
@@ -740,7 +751,7 @@ export default function PostContestPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-body-sm">
-                  <span className="text-secondary">Platform Fee (2.5%)</span>
+                  <span className="text-secondary">Contestic platform fee ({PLATFORM_FEE_PERCENT}%)</span>
                   <span className="font-mono font-bold text-on-surface">
                     {formatINR(platformFee)}
                   </span>
@@ -751,6 +762,9 @@ export default function PostContestPage() {
                     {formatINR(totalCharged)}
                   </span>
                 </div>
+                <p className="text-xs leading-5 text-secondary">
+                  Covers platform operations, secure payment processing, and contest administration.
+                </p>
               </div>
             )}
 
@@ -928,7 +942,7 @@ export default function PostContestPage() {
                     <span className="font-mono font-semibold text-on-surface">{formatINR(prizePaise)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-4 text-sm">
-                    <span className="text-secondary">Contestic fee (2.5%)</span>
+                    <span className="text-secondary">Contestic platform fee ({PLATFORM_FEE_PERCENT}%)</span>
                     <span className="font-mono font-semibold text-on-surface">{formatINR(platformFee)}</span>
                   </div>
                   <div className="border-t border-indigo-100 pt-4">
@@ -939,7 +953,7 @@ export default function PostContestPage() {
                   </div>
                 </div>
                 <p className="mt-6 rounded-lg border border-indigo-100 bg-white/70 p-3 text-xs leading-5 text-secondary">
-                  This setup is saved as a draft for up to two days. Once payment is confirmed and the contest is live, it cannot be cancelled.
+                  The platform fee covers platform operations, secure payment processing, and contest administration. This setup is saved as a draft for up to two days. Once payment is confirmed and the contest is live, it cannot be cancelled.
                 </p>
               </aside>
             </div>

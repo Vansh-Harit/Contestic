@@ -1,4 +1,4 @@
-export const PLATFORM_FEE_PERCENT = 2.5
+export const PLATFORM_FEE_PERCENT = 5
 export const MIN_PRIZE_INR = 500
 export const MAX_PRIZE_INR = 500000
 export const MIN_ENTRIES = 10

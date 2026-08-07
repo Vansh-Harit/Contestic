@@ -23,8 +23,8 @@ authorization or lifecycle behavior.
 
 ## Money rules
 
-- Commission is 2.5% and is paid by the contest creator in addition to the
-  prize. A ₹1,000 prize therefore charges ₹1,025; the winner receives ₹1,000.
+- Commission is 5% and is paid by the contest creator in addition to the
+  prize. A ₹1,000 prize therefore charges ₹1,050; the winner receives ₹1,000.
 - The full charged amount is refunded when the contest closes with zero
   submissions, including when entries existed but nobody submitted.
 - A live contest cannot be voluntarily cancelled.

@@ -3,17 +3,21 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { User } from '@supabase/supabase-js'
+import dynamic from 'next/dynamic'
 import { formatINR } from '@/lib/utils'
 import type { ContestPhase } from '@/lib/utils'
-import { SubmitDialog } from '@/components/submit-dialog'
 import { CountdownTimer } from '@/components/countdown-timer'
 import { ContestLifecycle, ContestStatusBadge } from '@/components/contest-lifecycle'
 import { AlertCircle, Lock, ExternalLink, MessageCircle, Clock, Trophy, Share2, Users } from 'lucide-react'
 import AuthModal from '@/components/auth-modal'
-import ChatPanel from '@/components/chat-panel'
 import toast from 'react-hot-toast'
 import type { VisibleContest } from '@/lib/types'
+
+const SubmitDialog = dynamic(
+  () => import('@/components/submit-dialog').then((module) => module.SubmitDialog),
+  { ssr: false }
+)
+const ChatPanel = dynamic(() => import('@/components/chat-panel'), { ssr: false })
 
 export interface ContestMaterial {
   id?: string
@@ -28,7 +32,7 @@ type ContestDetail = VisibleContest & {
 
 interface ContestDetailClientProps {
   contest: ContestDetail
-  user: User | null
+  user: { id: string } | null
   hasSubmitted: boolean
   hasEntered: boolean
   phase: ContestPhase

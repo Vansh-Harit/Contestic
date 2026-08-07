@@ -6,16 +6,17 @@ export default async function SettingsPage() {
   const supabase = await createClient()
 
   const {
-    data: { user },
+    data: claimsData,
     error: authError,
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getClaims()
+  const userId = claimsData?.claims?.sub
 
-  if (authError || !user) redirect('/login')
+  if (authError || !userId) redirect('/login')
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('full_name, avatar_url, email, bio')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single()
 
   return (
@@ -28,11 +29,11 @@ export default async function SettingsPage() {
       </p>
       <SettingsClient
         profile={{
-          id: user.id,
+          id: userId,
           fullName: profile?.full_name ?? '',
           avatarUrl: profile?.avatar_url ?? null,
           bio: profile?.bio ?? '',
-          email: user.email ?? '',
+          email: profile?.email ?? '',
         }}
       />
     </main>

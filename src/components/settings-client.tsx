@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Camera, Loader2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_SIZE_BYTES } from '@/lib/constants'
+import { useAuth } from '@/components/auth-provider'
 
 interface SettingsClientProps {
   profile: {
@@ -27,6 +28,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const { refreshProfile } = useAuth()
 
   const displayUrl = previewUrl || avatarUrl
   const initials = fullName ? fullName.charAt(0).toUpperCase() : profile.email.charAt(0).toUpperCase()
@@ -66,6 +68,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
 
       setAvatarUrl(data.avatar_url)
       setPreviewUrl(null)
+      await refreshProfile()
       toast.success('Profile picture updated')
       router.refresh()
     } catch (error) {
@@ -90,6 +93,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
 
       setAvatarUrl(null)
       setPreviewUrl(null)
+      await refreshProfile()
       toast.success('Profile picture removed')
       router.refresh()
     } catch (error) {
@@ -127,6 +131,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
 
       setFullName(data.profile.full_name)
       setBio(data.profile.bio ?? '')
+      await refreshProfile()
       toast.success('Profile updated')
       router.refresh()
     } catch (error) {

@@ -1,23 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Clock, Users, ChevronDown, Video } from 'lucide-react'
 import { formatINR, daysUntil, getContestPhase, cn } from '@/lib/utils'
 import AuthModal from '@/components/auth-modal'
-import { User } from '@supabase/supabase-js'
 import { InteractiveHoverButton } from '@/components/magicui/interactive-hover-button'
 import { ContestStatusBadge } from '@/components/contest-lifecycle'
 import type { VisibleContest } from '@/lib/types'
+import { useAuth } from '@/components/auth-provider'
 
 type SortOption = 'newest' | 'prize_high' | 'prize_low' | 'ending_soon'
 
-export default function BrowseClient({ initialContests, user }: { initialContests: VisibleContest[], user: User | null }) {
+export default function BrowseClient({ initialContests }: { initialContests: VisibleContest[] }) {
   const router = useRouter()
+  const { user } = useAuth()
   const [activeCategory, setActiveCategory] = useState('All Categories')
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [sortOpen, setSortOpen] = useState(false)
+  const prefetchedContests = useRef(new Set<string>())
+
+  const prefetchContest = (contestId: string) => {
+    if (prefetchedContests.current.has(contestId)) return
+    prefetchedContests.current.add(contestId)
+    router.prefetch(`/contest/${contestId}`)
+  }
 
   const categories = ['All Categories', 'Naming', 'Content Writing', 'Design', 'Video Editing', 'Others']
 
@@ -219,17 +227,20 @@ export default function BrowseClient({ initialContests, user }: { initialContest
                   <div
                     key={contest.id}
                     onClick={() => router.push(`/contest/${contest.id}`)}
+                    onMouseEnter={() => prefetchContest(contest.id)}
+                    onFocusCapture={() => prefetchContest(contest.id)}
+                    onTouchStart={() => prefetchContest(contest.id)}
                     className="bg-white border border-gray-200 hover:border-gray-300 rounded-xl flex flex-col md:flex-row items-stretch overflow-hidden transition-all duration-200 hover:shadow-sm cursor-pointer group"
                   >
                     {/* Category Image */}
                     <div 
-                      className="relative flex h-28 w-full shrink-0 bg-gray-50 md:h-auto md:w-[200px]"
+                      className="relative flex h-40 w-full shrink-0 items-center justify-center overflow-hidden bg-gray-50 md:h-auto md:w-[200px]"
                       style={{ background: catColor.bg }}
                     >
                       <img 
                         src={getCategoryImage(contest.category)} 
                         alt={contest.category}
-                        className="absolute inset-0 w-full h-full object-cover"
+                        className="absolute inset-0 h-full w-full object-contain p-3 md:object-cover md:p-0"
                         onError={(e) => {
                           // Fallback if image not provided yet
                           e.currentTarget.style.display = 'none'

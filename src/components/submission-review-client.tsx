@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { getContestPhase } from '@/lib/utils'
 import { ArrowLeft, Download, ExternalLink, FileText, Inbox, MessageCircle, Trophy } from 'lucide-react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import ChatPanel from '@/components/chat-panel'
 import { ContestStatusBadge } from '@/components/contest-lifecycle'
 import type { Contest, SubmissionAttachment } from '@/lib/types'
+
+const ChatPanel = dynamic(() => import('@/components/chat-panel'), { ssr: false })
 
 type ReviewContest = Pick<
   Contest,

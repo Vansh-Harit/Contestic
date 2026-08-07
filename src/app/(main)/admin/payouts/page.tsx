@@ -8,14 +8,15 @@ export const dynamic = 'force-dynamic'
 export default async function AdminPayoutsPage() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/')
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const userId = claimsData?.claims?.sub
+  if (!userId) redirect('/')
 
   // Redirect non-admin users (check database role)
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single()
 
   if (profile?.role !== 'admin') {

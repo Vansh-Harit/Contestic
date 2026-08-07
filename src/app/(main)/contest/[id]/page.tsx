@@ -13,38 +13,42 @@ export default async function ContestDetailPage(props: { params: Promise<{ id: s
   const params = await props.params
   const supabase = await createClient()
 
-  const { data: contestData } = await supabase
-    .rpc('get_visible_contests', { p_contest_id: params.id })
-    .single()
+  const [contestResult, authResult] = await Promise.all([
+    supabase
+      .rpc('get_visible_contests', { p_contest_id: params.id })
+      .single(),
+    supabase.auth.getClaims(),
+  ])
+
+  const contestData = contestResult.data
 
   const contest = contestData as VisibleContest | null
 
   if (!contest || contest.status === 'draft') return notFound()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const userId = authResult.data?.claims?.sub
+  const user = userId ? { id: userId } : null
   const admin = createAdminClient()
 
   let hasSubmitted = false
-  if (user) {
-    const { data } = await supabase
-      .from('submissions')
-      .select('id')
-      .eq('contest_id', params.id)
-      .eq('contestant_id', user.id)
-      .single()
-    hasSubmitted = !!data
-  }
-
-  // Check if current user has entered this contest
   let hasEntered = false
   if (user) {
-    const { data: entry } = await supabase
-      .from('contest_entries')
-      .select('id')
-      .eq('contest_id', params.id)
-      .eq('contestant_id', user.id)
-      .single()
-    hasEntered = !!entry
+    const [submissionResult, entryResult] = await Promise.all([
+      supabase
+        .from('submissions')
+        .select('id')
+        .eq('contest_id', params.id)
+        .eq('contestant_id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('contest_entries')
+        .select('id')
+        .eq('contest_id', params.id)
+        .eq('contestant_id', user.id)
+        .maybeSingle(),
+    ])
+    hasSubmitted = !!submissionResult.data
+    hasEntered = !!entryResult.data
   }
 
   // Determine contest phase
@@ -56,27 +60,26 @@ export default async function ContestDetailPage(props: { params: Promise<{ id: s
     hasEntered,
     stage: phase === 'entry_closed' ? 'submission_open' : phase,
   })
-  let materials: ContestMaterial[] = []
-  if (canSeeMaterials) {
-    const { data } = await admin
-      .from('contest_materials')
-      .select('*')
-      .eq('contest_id', params.id)
-      .order('display_order', { ascending: true })
-    materials = data ?? []
-  }
+  const [materialsResult, unreadResult] = await Promise.all([
+    canSeeMaterials
+      ? admin
+          .from('contest_materials')
+          .select('id, type, label, content')
+          .eq('contest_id', params.id)
+          .order('display_order', { ascending: true })
+      : Promise.resolve({ data: [] }),
+    user && hasEntered
+      ? supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('contest_id', params.id)
+          .eq('recipient_id', user.id)
+          .is('read_at', null)
+      : Promise.resolve({ count: 0 }),
+  ])
 
-  // Fetch unread messages
-  let unreadCount = 0
-  if (user && hasEntered) {
-    const { count } = await supabase
-      .from('messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('contest_id', params.id)
-      .eq('recipient_id', user.id)
-      .eq('read', false)
-    unreadCount = count ?? 0
-  }
+  const materials = (materialsResult.data ?? []) as ContestMaterial[]
+  const unreadCount = unreadResult.count ?? 0
 
   return (
     <ContestDetailClient

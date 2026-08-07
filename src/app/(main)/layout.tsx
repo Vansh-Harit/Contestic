@@ -1,4 +1,5 @@
 import Navbar from '@/components/navbar'
+import { AuthProvider } from '@/components/auth-provider'
 import Link from 'next/link'
 import { Mail } from 'lucide-react'
 
@@ -8,7 +9,7 @@ export default function MainLayout({
   children: React.ReactNode
 }) {
   return (
-    <>
+    <AuthProvider>
       <Navbar />
       <div className="flex flex-1 flex-col">{children}</div>
       <footer className="mt-16 w-full border-t border-outline-variant bg-white py-8 font-sans">
@@ -30,16 +31,16 @@ export default function MainLayout({
               Privacy policy
             </Link>
             <a
-              href="mailto:support@contestic.com"
+              href="mailto:contestic.support@gmail.com"
               className="inline-flex items-center gap-2 font-medium transition-colors hover:text-primary"
             >
               <Mail className="h-4 w-4" aria-hidden="true" />
-              support@contestic.com
+              contestic.support@gmail.com
             </a>
             <span>© {new Date().getFullYear()} Contestic</span>
           </div>
         </div>
       </footer>
-    </>
+    </AuthProvider>
   )
 }

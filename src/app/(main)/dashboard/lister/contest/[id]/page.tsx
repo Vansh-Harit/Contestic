@@ -24,11 +24,12 @@ export default async function ListerContestDetailPage(props: {
   const supabase = await createClient()
 
   const {
-    data: { user },
+    data: claimsData,
     error: authError
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getClaims()
+  const userId = claimsData?.claims?.sub
 
-  if (authError || !user) {
+  if (authError || !userId) {
     redirect('/login')
   }
 
@@ -50,7 +51,7 @@ export default async function ListerContestDetailPage(props: {
     lister_avatar: contestRow.profiles?.avatar_url ?? null,
   }
 
-  if (contest.lister_id !== user.id) {
+  if (contest.lister_id !== userId) {
     return notFound()
   }
 
@@ -58,29 +59,46 @@ export default async function ListerContestDetailPage(props: {
   const accessHasEnded =
     contest.status === 'completed' || contest.status === 'cancelled'
 
-  // Never send completed-contest descriptions, uploads, or external links to
-  // the browser. The rows remain in the database for the approved record.
-  const { data: submissions, error: subError } = accessHasEnded
+  // These reads are independent once contest ownership is confirmed, so issue
+  // them together. Completed contests still never send descriptions, uploads,
+  // external links, or chat data to the browser.
+  const submissionsPromise = accessHasEnded
     ? { data: [], error: null }
-    : await admin
+    : admin
         .from('submissions')
         .select('*, profiles:contestant_id(full_name, avatar_url, email)')
         .eq('contest_id', params.id)
         .order('submitted_at', { ascending: true })
 
+  const entrantsPromise = admin
+    .from('contest_entries')
+    .select('contestant_id, entered_at, profiles:contestant_id(full_name, avatar_url)')
+    .eq('contest_id', params.id)
+    .order('entered_at', { ascending: true })
+
+  const messagesPromise = accessHasEnded
+    ? { data: [] }
+    : admin
+        .from('messages')
+        .select('sender_id')
+        .eq('recipient_id', userId)
+        .is('read_at', null)
+        .eq('contest_id', params.id)
+
+  const [submissionsResult, entrantsResult, messagesResult] = await Promise.all([
+    submissionsPromise,
+    entrantsPromise,
+    messagesPromise,
+  ])
+
+  const { data: submissions, error: subError } = submissionsResult
   if (subError) {
     console.error('Failed to fetch submissions', subError)
   }
 
   let entrants: ReviewEntrant[] = []
   const unreadCounts: Record<string, number> = {}
-
-  // Fetch entrants
-  const { data: entryData, error: entryError } = await admin
-    .from('contest_entries')
-    .select('contestant_id, entered_at, profiles:contestant_id(full_name, avatar_url)')
-    .eq('contest_id', params.id)
-    .order('entered_at', { ascending: true })
+  const { data: entryData, error: entryError } = entrantsResult
 
   if (!entryError && entryData) {
     entrants = entryData.map((entry) => ({
@@ -89,15 +107,7 @@ export default async function ListerContestDetailPage(props: {
     }))
   }
 
-  // Fetch unread message counts for this lister regarding this contest
-  const { data: messagesData } = accessHasEnded
-    ? { data: [] }
-    : await admin
-        .from('messages')
-        .select('sender_id')
-        .eq('recipient_id', user.id)
-        .is('read_at', null)
-        .eq('contest_id', params.id)
+  const messagesData = messagesResult.data
 
   if (messagesData) {
     messagesData.forEach((msg) => {
@@ -119,7 +129,7 @@ export default async function ListerContestDetailPage(props: {
     <SubmissionReviewClient 
       contest={contest} 
       submissions={authorizedSubmissions}
-      userId={user.id}
+      userId={userId}
       entrants={entrants}
       initialUnreadCounts={unreadCounts}
     />

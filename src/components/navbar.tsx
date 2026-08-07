@@ -4,53 +4,20 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { User } from '@supabase/supabase-js'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { useAuth } from '@/components/auth-provider'
 
 export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
-  const [user, setUser] = useState<User | null>(null)
-  const [isAuthResolved, setIsAuthResolved] = useState(false)
-  const [profile, setProfile] = useState<{ full_name: string; avatar_url: string; role: string } | null>(null)
+  const { user, profile, isLoading, signOut } = useAuth()
 
   const isActive = (path: string) => pathname === path
 
-  const fetchProfile = async (userId: string) => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('profiles')
-      .select('full_name, avatar_url, role')
-      .eq('id', userId)
-      .single()
-    setProfile(data)
-  }
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      setIsAuthResolved(true)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      setIsAuthResolved(true)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-
-
   const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    await signOut()
     router.push('/')
   }
 
@@ -171,7 +138,7 @@ export default function Navbar() {
                 )}
               </div>
             </>
-          ) : isAuthResolved ? (
+          ) : !isLoading ? (
             <>
               <button
                 onClick={() => router.push('/login')}
@@ -266,7 +233,7 @@ export default function Navbar() {
                 Sign Out
               </button>
             </>
-          ) : isAuthResolved ? (
+          ) : !isLoading ? (
             <>
               <button
                 onClick={() => {

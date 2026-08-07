@@ -11,7 +11,7 @@
 - **Rate Limiting:** Upstash Redis (sliding window, user-ID keyed, survives cold starts)
 - **Error Tracking:** Sentry (client + server + edge, production-only)
 - **Forms:** react-hook-form + zod + @hookform/resolvers
-- **Deployment target:** Netlify (configuration prepared locally; not deployed)
+- **Deployment:** Netlify controlled beta at `https://contestic.netlify.app` (deployed 2026-08-06; workflow verification remains)
 
 ## Active Database Schemas
 - `profiles` — user identity, razorpay contact/fund IDs, `upi_id`, `role` (TEXT: `user`|`admin`, default `user`)
@@ -83,4 +83,5 @@
 
 ## Current Deployment Environment
 - **Local:** `npm run dev` → http://localhost:3000
-- **Production:** Netlify selected; no production deployment or domain cutover yet
+- **Controlled beta:** `https://contestic.netlify.app` is live from `main`; no custom domain yet
+- **General public production:** not yet approved; provider callbacks, email domain, Auth SMTP, lifecycle cron and end-to-end money/file flows still require verification

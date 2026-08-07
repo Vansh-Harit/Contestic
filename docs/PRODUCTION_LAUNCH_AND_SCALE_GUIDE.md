@@ -51,9 +51,10 @@ friends and use it for Resend/Supabase SMTP; attaching it as the website domain
 can still wait. Without custom SMTP, Supabase's default sender is limited to
 project-team addresses and password recovery will not work for ordinary users.
 
-The repository default remains `NETLIFY_SCHEDULED_JOBS_ENABLED=false` in
-`.env.example`. This is an intentional fail-safe; the deployed production
-environment is where it becomes `true`.
+The repository example and the approved month-long controlled beta use
+`NETLIFY_SCHEDULED_JOBS_ENABLED=true` so lifecycle, email and refund behavior
+can be tested end to end. Set it to `false` only as the documented incident
+rollback switch or when the owner explicitly ends scheduled testing.
 
 ## Blockers before the first public production deploy
 

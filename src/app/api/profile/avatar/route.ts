@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 import { MAX_AVATAR_SIZE_BYTES, ALLOWED_AVATAR_TYPES } from '@/lib/constants'
 
 export async function POST(request: Request) {
@@ -43,26 +44,26 @@ export async function POST(request: Request) {
   }
 
   const ext = file.type === 'image/png' ? 'png' : 'jpg'
-  const filePath = `${user.id}/avatar.${ext}`
+  // A unique object URL prevents browsers and the public Storage CDN from
+  // continuing to show a cached image after an avatar replacement.
+  const filePath = `${user.id}/avatar-${randomUUID()}.${ext}`
+  const admin = createAdminClient()
+  const avatarStorage = admin.storage.from('avatars')
 
   // Delete any existing avatar files for this user first
-  const { data: existingFiles } = await supabase.storage
-    .from('avatars')
-    .list(user.id)
+  const { data: existingFiles } = await avatarStorage.list(user.id)
 
   if (existingFiles && existingFiles.length > 0) {
     const filesToRemove = existingFiles.map(f => `${user.id}/${f.name}`)
-    await supabase.storage.from('avatars').remove(filesToRemove)
+    await avatarStorage.remove(filesToRemove)
   }
 
   // Upload the new avatar
   const buffer = Buffer.from(await file.arrayBuffer())
-  const { error: uploadError } = await supabase.storage
-    .from('avatars')
-    .upload(filePath, buffer, {
-      contentType: file.type,
-      upsert: true,
-    })
+  const { error: uploadError } = await avatarStorage.upload(filePath, buffer, {
+    contentType: file.type,
+    upsert: false,
+  })
 
   if (uploadError) {
     console.error('[Avatar] Upload error:', uploadError)
@@ -73,14 +74,11 @@ export async function POST(request: Request) {
   }
 
   // Get the public URL
-  const { data: urlData } = supabase.storage
-    .from('avatars')
-    .getPublicUrl(filePath)
+  const { data: urlData } = avatarStorage.getPublicUrl(filePath)
 
   const avatarUrl = urlData.publicUrl
 
   // Update the profile
-  const admin = createAdminClient()
   const { error: updateError } = await admin
     .from('profiles')
     .update({ avatar_url: avatarUrl })
@@ -108,16 +106,15 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const admin = createAdminClient()
+  const avatarStorage = admin.storage.from('avatars')
+
   // List and remove all avatar files for this user
-  const { data: existingFiles } = await supabase.storage
-    .from('avatars')
-    .list(user.id)
+  const { data: existingFiles } = await avatarStorage.list(user.id)
 
   if (existingFiles && existingFiles.length > 0) {
     const filesToRemove = existingFiles.map(f => `${user.id}/${f.name}`)
-    const { error: removeError } = await supabase.storage
-      .from('avatars')
-      .remove(filesToRemove)
+    const { error: removeError } = await avatarStorage.remove(filesToRemove)
 
     if (removeError) {
       console.error('[Avatar] Remove error:', removeError)
@@ -129,7 +126,6 @@ export async function DELETE() {
   }
 
   // Clear avatar_url in profile
-  const admin = createAdminClient()
   const { error: updateError } = await admin
     .from('profiles')
     .update({ avatar_url: null })

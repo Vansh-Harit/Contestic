@@ -2,11 +2,18 @@
 
 Read these first in a fresh session:
 
-1. `docs/CODEX_CONTEXT_PACK.md`
-2. `docs/ISSUE_REGISTER.md`
-3. `docs/MIGRATION_BOARD.md`
-4. `docs/REMAINING_TASK_PROMPTS.md` when starting the next numbered task
-5. The task-specific document in `docs/`
+1. `docs/PROJECT_STAGE_AND_HANDOFF.md`
+2. `docs/CODEX_CONTEXT_PACK.md`
+3. `docs/ISSUE_REGISTER.md`
+4. `docs/MIGRATION_BOARD.md`
+5. `docs/REMAINING_TASK_PROMPTS.md` when starting the next numbered task
+6. The task-specific document in `docs/`
+
+For hosting, credentials, launch or scaling work, also read:
+
+- `docs/NETLIFY_CREDENTIALS_AND_RELEASES.md`
+- `docs/PRODUCTION_ARCHITECTURE_AND_MIGRATION.md`
+- `docs/PRODUCTION_LAUNCH_AND_SCALE_GUIDE.md`
 
 Rules:
 

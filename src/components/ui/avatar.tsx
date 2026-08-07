@@ -26,6 +26,8 @@ function Avatar({
 }
 
 function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
+  if (!props.src) return null
+
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"

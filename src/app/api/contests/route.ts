@@ -83,6 +83,17 @@ export async function POST(request: Request) {
       )
     }
 
+    const requestedPrizeInr = Number(body.prize_amount_inr)
+    const currentTotal = Number.isFinite(requestedPrizeInr)
+      ? calcTotal(rupeesToPaise(requestedPrizeInr))
+      : null
+    if (currentTotal === null || Number(draft.total_charged) !== currentTotal) {
+      return NextResponse.json(
+        { error: 'Platform pricing changed. Please continue with a new payment order.' },
+        { status: 409 }
+      )
+    }
+
     const { data: payment } = await supabaseAdmin
       .from('payments')
       .select('razorpay_order_id, amount, payment_status')
@@ -249,6 +260,7 @@ export async function POST(request: Request) {
 
     if (
       materialsMatch &&
+      Number(matchingDraft.total_charged) === total &&
       payment &&
       payment.razorpay_order_id === matchingDraft.razorpay_order_id &&
       Number(payment.amount) === Number(matchingDraft.total_charged) &&

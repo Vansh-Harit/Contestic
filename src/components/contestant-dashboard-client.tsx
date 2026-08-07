@@ -3,12 +3,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { formatINR } from '@/lib/utils'
 import { Search, MessageCircle, Trophy, Clock, Settings, LayoutGrid, CheckCircle, Send, Award, WalletCards } from 'lucide-react'
-import ChatPanel from '@/components/chat-panel'
 import toast from 'react-hot-toast'
 import type { ContestPhase } from '@/lib/utils'
 import type { ContestStatus } from '@/lib/types'
+
+const ChatPanel = dynamic(() => import('@/components/chat-panel'), { ssr: false })
 
 export interface DashboardContest {
   id: string
