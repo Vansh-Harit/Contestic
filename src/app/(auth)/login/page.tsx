@@ -204,6 +204,24 @@ function LoginContent() {
             {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
           </button>
         </div>
+
+        <p className="mt-5 text-center text-xs leading-5 text-secondary">
+          By continuing, you agree to our{' '}
+          <Link
+            href="/terms"
+            className="font-semibold text-primary underline-offset-2 hover:underline"
+          >
+            Terms and Conditions
+          </Link>{' '}
+          and acknowledge our{' '}
+          <Link
+            href="/privacy"
+            className="font-semibold text-primary underline-offset-2 hover:underline"
+          >
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </div>
     </main>
   )

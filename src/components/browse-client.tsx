@@ -38,6 +38,8 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
     'Others': 'Others'
   }
 
+  const hasAnyContests = initialContests.length > 0
+
   const filteredContests = initialContests
     .filter((c) => {
       const mapped = categoryMap[activeCategory]
@@ -364,17 +366,21 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
               <div className="border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center p-16 text-center bg-white min-h-[400px]">
                 <AlertCircle className="h-10 w-10 text-gray-300 mb-4" />
                 <h3 className="text-xl font-bold text-gray-400 mb-2">
-                  No contests found
+                  {hasAnyContests ? 'No contests found' : 'No contests at the moment'}
                 </h3>
-                <p className="text-body-sm text-gray-400 mb-6">
-                  There are no contests matching your current filters.
+                <p className={cn('text-body-sm text-gray-400', hasAnyContests && 'mb-6')}>
+                  {hasAnyContests
+                    ? 'There are no contests matching your current filters.'
+                    : 'New contests will appear here when they go live.'}
                 </p>
-                <button
-                  onClick={() => setActiveCategory('All Categories')}
-                  className="text-[#6366F1] font-bold text-sm underline cursor-pointer"
-                >
-                  Clear Filters
-                </button>
+                {hasAnyContests && (
+                  <button
+                    onClick={() => setActiveCategory('All Categories')}
+                    className="text-[#6366F1] font-bold text-sm underline cursor-pointer"
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
             )}
           </section>

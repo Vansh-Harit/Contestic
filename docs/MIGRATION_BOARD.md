@@ -10,6 +10,7 @@ Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGI
 
 ## Database and security
 
+- [x] M-04b Complete the owner-approved test-data reset on 2026-08-10. A guarded Supabase MCP transaction removed 32 contests and all contest-linked entries, materials, submissions, messages, notifications, payments, payout requests and email-delivery jobs. All 5 Auth users and 5 profiles were preserved. Razorpay records and R2 objects were not changed.
 - [ ] M-04 Baseline export is prepared in `supabase/migrations/20260610081812_create_profiles_table.sql` with historical marker files and hardening filenames aligned to the live Supabase migration versions. No live database write was made. C-01 remains `verify` until the user requests and reports a successful blank-database rebuild.
 - [ ] M-04a Before any future database push, handle local migration `20260729151427_authorization_reset.sql`: the live objects already match it, but its version is absent from MCP migration history (C-16). Applying/recording or repairing history requires separate explicit approval.
 - [x] M-05 Audit RLS, `contests_with_counts`, and `select_winner()`. Per the user's no-database-branch decision, this was performed against Contestic with migrations and rollback-tested SQL. Verified 2026-07-28; S-01 resolved.
@@ -20,7 +21,7 @@ Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGI
 ## Money and lifecycle
 
 - [ ] M-08 Task 7 payment hardening is implemented locally: Checkout verification, fail-closed order persistence, replay/out-of-order reconciliation, and idempotent full-refund support. Run the user test-mode checklist for success, browser-close, failure/retry, duplicate, and out-of-order events before resolving S-03/C-19.
-- [ ] M-08a Retest C-24 with one fresh Razorpay test-mode contest: fail or dismiss Checkout, continue the saved draft, confirm the same contest/order is reused, then pay successfully and confirm only that contest becomes active. Existing duplicate test rows remain untouched.
+- [ ] M-08a Retest C-24 with one fresh Razorpay test-mode contest after the 2026-08-10 test-data reset: fail or dismiss Checkout, continue the saved draft, confirm the same contest/order is reused, then pay successfully and confirm only that contest becomes active.
 - [ ] M-09 User tests final entry, post-entry-period unlock, submit/description review, judging, winner, cancel/refund, and payout transitions at deadline boundaries using the supplied manual test cards. The stale `active` versus effective `judging` winner-selection 400 was repaired locally on 2026-08-01 and awaits user retest (C-20); description review awaits C-21 verification. Also verify C-22 countdown visibility and that receiving every submission early no longer changes the fixed submission deadline (C-23). Codex fixes reported defects but does not run these checks unless explicitly asked.
 - [ ] M-10 Task 7 now keeps the payout transfer identifier empty until an administrator records a real 3-100 character UPI/transaction reference, and retries reconcile partial state. Confirm the UPI collection, manual transfer, reference, notification, and admin audit trail with user evidence.
 
@@ -49,6 +50,8 @@ Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGI
 - [ ] M-25 Manually verify the local performance pass (C-30): anonymous Browse, protected-route redirects, signed-in navbar, contest detail, both dashboards, settings, chat and submission dialog. Record cold and warm navigation timings; do not mark resolved from visual inspection alone.
 - [ ] M-25a Migration `20260807142130_optimize_authenticated_dashboard_reads.sql` is prepared locally with a rollback file and scoped grant/role assertions. It has not been applied. After separate database approval, run rollback-only validation and assertions, review advisors, apply the exact approved migration, then set `DASHBOARD_READ_PROJECTIONS_ENABLED=true` first in a controlled deploy context. Leave the flag false on any RPC or workflow regression.
 - [ ] M-25b Retest C-31: open a public contest while signed out, open each protected route while signed out, upload/replace/remove a JPG and PNG avatar while signed in, and confirm the navbar updates without a full reload. Client-side avatar bucket enumeration must remain blocked.
+- [ ] M-25c Verify C-32 with an empty marketplace and again after creating one contest: zero total contests should show “No contests at the moment” without Clear Filters, while an empty category should retain the filtered-results message and Clear Filters action.
+- [ ] M-25d Verify C-33 on desktop and mobile: the login/signup card should show working Terms and Privacy links without interfering with Google or email/password authentication.
 
 ## Launch
 
