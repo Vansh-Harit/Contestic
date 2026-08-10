@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
   const requestedNext = searchParams.get('next') ?? '/'
   const next =
     requestedNext.startsWith('/') &&
@@ -23,7 +25,16 @@ export async function GET(request: Request) {
     }
   }
 
-  if (code) {
+  if (tokenHash && type === 'recovery') {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'recovery',
+    })
+    if (!error) {
+      return NextResponse.redirect(`${redirectOrigin}${next}`)
+    }
+  } else if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
