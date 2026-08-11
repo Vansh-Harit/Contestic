@@ -37,6 +37,7 @@ Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGI
 - [ ] M-20 Migration `20260803143724_add_profile_bio_and_chat_scope` (local SHA-256 `72D67B5028C57951F9BE847E2D8F2B3D4A6A60E9FB409CB947740D35746AAB06`) was applied through Supabase MCP on 2026-08-03. Metadata confirms the bio column/constraint, message index, public-profile grants, and scoped chat policy. Run the Task 10 manual role checks before resolving C-11/C-25.
 - [ ] M-20a Verify Google/Supabase redirect allowlists, leaked-password protection, administrator assignment, and real login/session behavior before resolving S-02.
 - [ ] M-20b Supabase Auth custom SMTP, deployed callback allowlists and the hosted Reset password token-hash link are configured. The local callback now verifies recovery token hashes while retaining the OAuth/PKCE code branch. Deploy the callback, then manually verify a fresh recovery link for an existing email, an unknown email, an expired/used link, mismatched passwords and successful sign-in with the new password before resolving C-27.
+- [ ] M-20c Retest C-34 with a fresh recovery session: entering the current password must show the specific different-password guidance, while a different valid password must update successfully.
 
 ## Quality gates
 
