@@ -1,6 +1,6 @@
 # Contestic Project Stage and Handoff
 
-Last updated: 2026-08-07
+Last updated: 2026-08-16
 
 This is the first-stop project handoff for a new engineer or AI agent. Detailed risks remain in `docs/ISSUE_REGISTER.md`; executable work remains in `docs/MIGRATION_BOARD.md`.
 
@@ -8,14 +8,18 @@ This is the first-stop project handoff for a new engineer or AI agent. Detailed 
 
 Contestic is a **live, controlled beta**, not yet a generally marketed production service.
 
-- Live URL: <https://contestic.netlify.app>
+- Primary domain: <https://contestic.in>
+- Netlify fallback URL: <https://contestic.netlify.app>
 - Netlify project: `contestic` (`7c8cee82-db0c-49b5-8507-1cdd7945583a`)
 - Netlify project console: <https://app.netlify.com/projects/contestic>
 - Verified production deploy: `6a74adecf701cd0015ea9224`, state `ready`, branch `main`, commit `5c693906126ace8440df59aca786f1b5db53833f`, published 2026-08-06.
 - The `check-expired` scheduled function is registered for `0 */6 * * *` and `NETLIFY_SCHEDULED_JOBS_ENABLED` is enabled. Successful end-to-end scheduled execution is still unverified.
 - The site currently uses provider test/development configuration where documented. It must not be represented as fully production-verified.
 
-The owner intends to use this deployment with a small group for approximately one month, then buy a domain and finish public-launch configuration.
+The owner intends to keep Netlify for the first controlled month while testing
+with a small group. The future host has not been selected. The complete,
+provider-neutral comparison and cutover plan is in
+`docs/HOSTING_MIGRATION_PLAYBOOKS.md`.
 
 ## What the product does
 
@@ -31,7 +35,7 @@ Contestic is a contest marketplace:
 Financial rules already documented in the application:
 
 - Example: ₹1,000 prize + ₹50 fee = ₹1,050 paid by the creator; winner receives ₹1,000.
-- If there are zero submissions when judging begins, the full amount including the fee is refundable.
+- If there are zero submissions when judging begins, the advertised prize is refundable but the 5% platform fee is retained. This also applies when no users entered.
 - A live contest cannot be voluntarily cancelled.
 - If no winner is selected within three days, the platform retains its fee and the prize is manually allocated among valid submitters after review.
 
@@ -47,7 +51,7 @@ Financial rules already documented in the application:
 | Lifecycle/cron | Protected application route called by Netlify scheduled/background functions | `src/app/api/cron/check-expired/route.ts`; `netlify/functions/check-expired.mjs`; `netlify/functions/check-expired-background.mjs` |
 | Submission files | Private Cloudflare R2 objects and short-lived signed URLs | `src/lib/r2.ts`; `src/app/api/download/route.ts` |
 | Rate limits | Upstash Redis | `src/lib/ratelimit.ts` |
-| Monitoring | Sentry | `sentry.*.config.ts`; `src/app/global-error.tsx` |
+| Monitoring and analytics | Sentry errors; privacy-limited PostHog product events | `sentry.*.config.ts`; `src/app/global-error.tsx`; `src/instrumentation-client.ts`; `docs/ANALYTICS_EVENT_CATALOG.md` |
 
 ## Confirmed completed work
 
@@ -63,6 +67,7 @@ Financial rules already documented in the application:
 - The approved UI polish and Netlify deployment configuration are implemented.
 - The latest recorded local quality gate passed before deployment. Do not treat that as live workflow verification.
 - A local performance pass reduces public/auth round trips, adds cached Browse data, loading shells, prefetching, lazy client features and parallel private reads. The optional database read projections remain unapplied and disabled.
+- Privacy-limited PostHog instrumentation is implemented locally with manual events only; deploy-context variables and live event receipt remain unverified.
 
 ## Still unverified or incomplete
 

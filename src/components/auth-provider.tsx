@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { identifyAnalyticsUser, resetAnalyticsUser } from '@/lib/analytics'
 
 type SafeProfile = {
   full_name: string | null
@@ -59,6 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return
       const nextUser = session?.user ?? null
+      if (nextUser) identifyAnalyticsUser(nextUser.id)
+      else resetAnalyticsUser()
       setUser(nextUser)
       setProfile(null)
       if (nextUser) {

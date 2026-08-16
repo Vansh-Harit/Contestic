@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { deliverPendingEmails, enqueueEmail } from '@/lib/email-delivery'
 import { formatINR } from '@/lib/utils'
 import { deleteContestFolder } from '@/lib/r2'
-import { createIdempotentFullRefund } from '@/lib/razorpay-refund'
+import { createIdempotentRefund } from '@/lib/razorpay-refund'
 import { completeContestSubmissionCleanup } from '@/lib/contest-cleanup'
 
 type JoinedProfile = {
@@ -165,8 +165,9 @@ export async function GET(request: Request) {
     }
   }
 
-  // 2. The fixed submission deadline either opens judging or triggers the
-  // already-approved full refund when there are zero submissions.
+  // 2. The fixed submission deadline either opens judging or refunds only the
+  // advertised prize when there are zero submissions. The 5% platform fee is
+  // retained in both the zero-entry and entered-without-submission cases.
   const { data: expiredContests, error: expiredError } = await supabase
     .from('contests_with_counts')
     .select('*')
@@ -200,20 +201,36 @@ export async function GET(request: Request) {
       try {
         const { data: payment, error: paymentError } = await supabase
           .from('payments')
-          .select('id, razorpay_payment_id, amount, payment_status')
+          .select('id, razorpay_payment_id, amount, prize_amount, platform_fee, payment_status')
           .eq('contest_id', contest.id)
           .single()
         if (paymentError || !payment?.razorpay_payment_id) {
           throw paymentError || new Error('Refundable payment was not found')
         }
 
+        const refundAmount = Number(payment.prize_amount)
+        const retainedFee = Number(payment.platform_fee)
+        const chargedAmount = Number(payment.amount)
+        if (
+          !Number.isSafeInteger(refundAmount) ||
+          refundAmount <= 0 ||
+          !Number.isSafeInteger(retainedFee) ||
+          retainedFee < 0 ||
+          refundAmount + retainedFee !== chargedAmount ||
+          refundAmount !== Number(contest.prize_amount)
+        ) {
+          throw new Error('Stored refund amounts are inconsistent')
+        }
+
         if (payment.payment_status !== 'refunded') {
           if (payment.payment_status !== 'captured') {
             throw new Error('Payment is not in a refundable state')
           }
-          const refund = await createIdempotentFullRefund({
+          const refund = await createIdempotentRefund({
             paymentId: payment.razorpay_payment_id,
-            amount: payment.amount,
+            amount: refundAmount,
+            // Keep the established key so a retry can never create a second
+            // refund for a contest that crossed the policy-change boundary.
             idempotencyKey: `contest_${contest.id}_full_refund`,
             reason: 'no_submissions',
           })
@@ -243,8 +260,8 @@ export async function GET(request: Request) {
           userId: contest.lister_id,
           contestId: contest.id,
           type: 'auto_refund',
-          title: 'Contest closed - full refund initiated',
-          message: `"${contest.title}" received no submissions. Your full payment refund has been initiated.`,
+          title: 'Contest closed - prize refund initiated',
+          message: `"${contest.title}" received no submissions. Your ${formatINR(refundAmount)} prize refund has been initiated. The ${formatINR(retainedFee)} platform fee is non-refundable.`,
         })
 
         const { data: lister } = await supabase
@@ -262,7 +279,8 @@ export async function GET(request: Request) {
             payload: {
               listerName: lister.full_name ?? 'there',
               contestTitle: contest.title,
-              refundAmount: formatINR(payment.amount),
+              refundAmount: formatINR(refundAmount),
+              retainedFee: formatINR(retainedFee),
               reason: (contest.entry_count ?? 0) === 0
                 ? 'no_entries'
                 : 'no_submissions',

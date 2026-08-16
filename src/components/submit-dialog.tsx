@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { AlertCircle, Upload, Link2, X, FileText, Image as ImageIcon, Plus, Loader2 } from 'lucide-react'
 import { formatBytes } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 
 interface AttachedFile {
   type: 'upload' | 'drive_link'
@@ -220,6 +221,13 @@ export function SubmitDialog({
         }),
       })
       if (res.ok) {
+        captureAnalyticsEvent('submission_completed', {
+          contest_id: contestId,
+          category,
+          attachment_count: finalFiles.length,
+          attachment_types: Array.from(new Set(finalFiles.map((file) => file.type))),
+          has_description: content.trim().length > 0,
+        })
         toast.success('Submission received! Good luck.')
         onSuccess()
         onClose()

@@ -42,6 +42,8 @@ These are compiled into or available to browser code. They are identifiers/confi
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_RAZORPAY_KEY_ID`
 - `NEXT_PUBLIC_SENTRY_DSN`
+- `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`
+- `NEXT_PUBLIC_POSTHOG_HOST`
 
 The Supabase anonymous key is safe to publish only because RLS remains the actual authorization boundary.
 
@@ -94,6 +96,7 @@ Recommended before public launch:
 | Upstash token | production only | separate test database/token | functions/runtime |
 | Cron secret/enable flag | production only | disabled unless a controlled test requires it | functions/runtime |
 | Sentry auth token | build only | optional separate project token | builds |
+| PostHog browser configuration | production project token/host | separate test project or absent | builds |
 
 Do not make production secrets available to deploy previews from forked/untrusted pull requests. Importing one `.env` file into the `all` context is convenient for initial deployment but is not the final least-privilege setup.
 

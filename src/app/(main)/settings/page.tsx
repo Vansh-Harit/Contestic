@@ -22,7 +22,7 @@ export default async function SettingsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-container-padding-mobile py-10 font-sans md:px-container-padding-desktop md:py-12">
       <h1 className="font-heading text-3xl font-bold text-on-surface">
-        Settings
+        My Profile
       </h1>
       <p className="mb-8 mt-1 text-sm text-secondary">
         Manage your public profile and private account information.

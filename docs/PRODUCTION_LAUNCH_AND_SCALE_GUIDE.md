@@ -1,12 +1,16 @@
 # Contestic Production Launch, Domain, Migration and Scale Guide
 
-Last reviewed: 2026-08-03. Prices and provider limits change; re-check the
+Last reviewed: 2026-08-13. Prices and provider limits change; re-check the
 linked official pages before purchasing or migrating.
 
 This is the durable operational guide for launching the current application.
 It does not authorize a deploy, live payment, refund, payout, DNS change or
 production database write. Known unresolved work remains authoritative in
 `docs/ISSUE_REGISTER.md` and `docs/MIGRATION_BOARD.md`.
+
+Detailed, provider-specific preparation, preview, cutover and rollback plans
+for Cloudflare Workers Paid, Firebase App Hosting and direct Google Cloud Run
+are maintained in `docs/HOSTING_MIGRATION_PLAYBOOKS.md`.
 
 ## Current architecture
 
@@ -23,6 +27,8 @@ production database write. Known unresolved work remains authoritative in
 - Rate limiting: Upstash Redis through `src/lib/ratelimit.ts`.
 - Error monitoring: Sentry through `src/instrumentation.ts` and
   `src/instrumentation-client.ts`.
+- Product analytics: PostHog through `src/instrumentation-client.ts` and the
+  event contract in `docs/ANALYTICS_EVENT_CATALOG.md`.
 - Lifecycle scheduling: Netlify calls `netlify/functions/check-expired.mjs`
   every six hours, which dispatches the protected cron route.
 
@@ -91,6 +97,8 @@ Browser-visible values:
 - `NEXT_PUBLIC_RAZORPAY_KEY_ID`
 - `NEXT_PUBLIC_APP_URL`
 - `NEXT_PUBLIC_SENTRY_DSN`
+- `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`
+- `NEXT_PUBLIC_POSTHOG_HOST`
 
 Server-only secrets:
 
@@ -349,40 +357,25 @@ Consider architecture work when monitoring shows a real constraint:
 - Add provider-budget alarms and reconciliation dashboards.
 - Move Supabase compute/storage, Resend volume and host capacity independently.
 
-## Optional Netlify-to-Cloudflare migration
+## Future hosting migration
 
-Cloudflare can host this Next.js application on Workers through OpenNext:
-<https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/>.
-It is not a configuration-only switch.
+Keep Netlify for the initial controlled month. Do not select a replacement
+from guessed user count or advertised free-tier limits. Capture dynamic
+requests, CPU duration, bandwidth, latency, errors, cron duration and provider
+usage first.
 
-Required migration work:
+`docs/HOSTING_MIGRATION_PLAYBOOKS.md` is the authoritative implementation guide
+for all three approved candidates:
 
-1. Create a separate branch and preserve the working Netlify configuration.
-2. Add and pin `@opennextjs/cloudflare` and Wrangler.
-3. Add `wrangler.jsonc`, `open-next.config.ts` and Cloudflare build/deploy scripts.
-4. Enable the documented Node.js compatibility mode.
-5. Replace `netlify/functions/check-expired*.mjs` with a Cloudflare scheduled
-   Worker that calls the same protected lifecycle logic.
-6. Move every environment value to Cloudflare bindings/secrets by name.
-7. Run a compatibility build and inspect Worker size/startup time.
-8. Manually test every SSR page and server route, especially AWS/R2 signing,
-   Razorpay, Resend, Sentry, Supabase SSR cookies and cron duration.
-9. Create a preview Worker with test-mode providers; do not point the production
-   domain or live webhook at it.
-10. Cut over DNS/webhooks only after parity checks, then retain Netlify as the
-    immediate rollback until the observation window passes.
+- Cloudflare Workers Paid through OpenNext: first low-cost compatibility
+  prototype;
+- Firebase App Hosting: managed Next.js/Cloud Run/CDN option;
+- direct Google Cloud Run: most control and full container portability.
 
-Cloudflare Free currently allows 100,000 Worker requests/day but only 10 ms CPU
-per invocation and a 3 MB Worker bundle. This app's server dependencies may not
-fit or execute reliably inside those limits. Workers Paid starts at $5/month,
-includes 10 million monthly requests and 30 million CPU-ms, and permits a 10 MB
-bundle: <https://developers.cloudflare.com/workers/platform/pricing/> and
-<https://developers.cloudflare.com/workers/platform/limits/>.
-
-Decision rule: keep Netlify for the initial month. Reconsider Cloudflare Workers
-Paid only after the application is behaviorally verified and a compatibility
-build proves that all routes work. Do not assume Cloudflare Free is production-
-safe for this server-heavy application.
+The hosting move retains Supabase and R2 and must not be combined with a
+database migration. Each candidate requires an isolated preview, the full role
+and lifecycle matrix, a one-scheduler handoff, exact callback/webhook/CORS
+review, a reversible DNS cutover and a retained Netlify rollback.
 
 ## Database migration and disaster recovery
 

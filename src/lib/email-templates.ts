@@ -209,17 +209,22 @@ export function autoRefundEmail(
   listerName: string,
   contestTitle: string,
   refundAmount: string,
+  retainedFee: string | null,
   reason: 'no_entries' | 'no_submissions'
 ): string {
   const outcome = reason === 'no_entries'
     ? 'received no entries before the entry period closed'
     : 'received entries, but no submissions before the submission deadline'
+  const refundDetails = retainedFee
+    ? `${paragraph(`A refund of the advertised prize amount, <strong>${escapeHtml(refundAmount)}</strong>, has been initiated. It may take 5-7 business days to appear.`)}
+       ${paragraph(`The Contestic platform fee of <strong>${escapeHtml(retainedFee)}</strong> is non-refundable and has been retained in accordance with the contest terms.`)}`
+    : paragraph(`A refund of <strong>${escapeHtml(refundAmount)}</strong> has been initiated. It may take 5-7 business days to appear.`)
 
   return base(`
-    ${heading('Contest closed - full refund initiated')}
+    ${heading('Contest closed - prize refund initiated')}
     ${greeting(listerName)}
     ${paragraph(`Your contest <strong>"${escapeHtml(contestTitle)}"</strong> ${outcome}.`)}
-    ${paragraph(`A full refund of <strong>${escapeHtml(refundAmount)}</strong>, including the Contestic fee, has been initiated. It may take 5-7 business days to appear.`)}
+    ${refundDetails}
   `)
 }
 
@@ -265,6 +270,14 @@ function payloadString(payload: QueuedEmailPayload, key: string): string {
     throw new Error(`Invalid email payload field: ${key}`)
   }
   return value
+}
+
+function payloadOptionalString(
+  payload: QueuedEmailPayload,
+  key: string
+): string | null {
+  const value = payload[key]
+  return typeof value === 'string' ? value : null
 }
 
 function payloadNumber(payload: QueuedEmailPayload, key: string): number {
@@ -364,6 +377,7 @@ export function renderQueuedEmail(
           payloadString(payload, 'listerName'),
           contestTitle,
           payloadString(payload, 'refundAmount'),
+          payloadOptionalString(payload, 'retainedFee'),
           reason
         ),
       }

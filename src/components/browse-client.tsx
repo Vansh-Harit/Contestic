@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { AlertCircle, Clock, Users, ChevronDown, Video } from 'lucide-react'
 import { formatINR, daysUntil, getContestPhase, cn } from '@/lib/utils'
 import AuthModal from '@/components/auth-modal'
@@ -10,7 +11,9 @@ import { ContestStatusBadge } from '@/components/contest-lifecycle'
 import type { VisibleContest } from '@/lib/types'
 import { useAuth } from '@/components/auth-provider'
 
-type SortOption = 'newest' | 'prize_high' | 'prize_low' | 'ending_soon'
+const DotGrid = dynamic(() => import('@/components/DotGrid'), { ssr: false })
+
+type SortOption = 'newest' | 'entry_open' | 'prize_high' | 'prize_low' | 'ending_soon'
 
 export default function BrowseClient({ initialContests }: { initialContests: VisibleContest[] }) {
   const router = useRouter()
@@ -19,7 +22,18 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [sortOpen, setSortOpen] = useState(false)
+  const [categoryOpen, setCategoryOpen] = useState(false)
+  const [showDesktopDotGrid, setShowDesktopDotGrid] = useState(false)
   const prefetchedContests = useRef(new Set<string>())
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 768px)')
+    const syncDesktopGrid = () => setShowDesktopDotGrid(desktopQuery.matches)
+
+    syncDesktopGrid()
+    desktopQuery.addEventListener('change', syncDesktopGrid)
+    return () => desktopQuery.removeEventListener('change', syncDesktopGrid)
+  }, [])
 
   const prefetchContest = (contestId: string) => {
     if (prefetchedContests.current.has(contestId)) return
@@ -43,10 +57,13 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
   const filteredContests = initialContests
     .filter((c) => {
       const mapped = categoryMap[activeCategory]
-      return mapped === 'All' || c.category === mapped
+      const matchesCategory = mapped === 'All' || c.category === mapped
+      const matchesEntryPeriod = sortBy !== 'entry_open' || getContestPhase(c) === 'entry_open'
+      return matchesCategory && matchesEntryPeriod
     })
     .sort((a, b) => {
       switch (sortBy) {
+        case 'entry_open': return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         case 'prize_high': return b.prize_amount - a.prize_amount
         case 'prize_low': return a.prize_amount - b.prize_amount
         case 'ending_soon': return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
@@ -56,6 +73,7 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
 
   const sortLabels: Record<SortOption, string> = {
     newest: 'Newest',
+    entry_open: 'Entry Period Open',
     prize_high: 'Prize: High → Low',
     prize_low: 'Prize: Low → High',
     ending_soon: 'Ending Soon'
@@ -94,9 +112,27 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
             style={{
               background: 'linear-gradient(90deg, #F9F8FD 0%, #F4F3FB 100%)',
             }}
-            className="relative rounded-2xl overflow-hidden mb-8"
+            className="relative mb-8 overflow-hidden rounded-2xl border border-indigo-100"
           >
-            <div className="flex flex-col md:flex-row items-center justify-between p-8 md:p-12 gap-8">
+            {showDesktopDotGrid && (
+              <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-55">
+                <DotGrid
+                  dotSize={3}
+                  gap={20}
+                  baseColor="#D9D6F4"
+                  activeColor="#6366F1"
+                  proximity={110}
+                  speedTrigger={120}
+                  shockRadius={180}
+                  shockStrength={2.5}
+                  maxSpeed={2200}
+                  resistance={900}
+                  returnDuration={1.2}
+                  className="h-full w-full"
+                />
+              </div>
+            )}
+            <div className="relative z-10 flex flex-col items-center justify-between gap-8 p-8 md:flex-row md:p-12">
               {/* Left content */}
               <div className="flex-1 max-w-md z-10">
                 <h1 className="text-3xl md:text-[40px] font-heading font-bold text-[#111827] mb-3 leading-[1.15]">
@@ -135,9 +171,53 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
           </section>
 
           {/* Category Filter Bar */}
-          <section className="mb-6 flex items-center justify-between gap-4 border-b border-gray-100 pb-4">
+          <section className="mb-6 grid grid-cols-2 items-center gap-3 border-b border-gray-100 pb-4 md:flex md:justify-between md:gap-4">
+            {/* Mobile category dropdown */}
+            <div className="relative min-w-0 md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryOpen(!categoryOpen)
+                  setSortOpen(false)
+                }}
+                aria-expanded={categoryOpen}
+                aria-haspopup="listbox"
+                className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-gray-300"
+              >
+                <span className="min-w-0 truncate font-semibold text-gray-900">
+                  {activeCategory === 'Naming' ? 'Brand Naming' : activeCategory}
+                </span>
+                <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", categoryOpen && "rotate-180")} aria-hidden="true" />
+              </button>
+
+              {categoryOpen && (
+                <div role="listbox" className="absolute left-0 top-full z-20 mt-1 w-52 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  {categories.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      role="option"
+                      aria-selected={activeCategory === category}
+                      onClick={() => {
+                        setActiveCategory(category)
+                        setCategoryOpen(false)
+                      }}
+                      className={cn(
+                        "w-full px-4 py-2 text-left text-sm transition-colors",
+                        activeCategory === category
+                          ? "bg-[#F3F2F8] font-semibold text-[#6366F1]"
+                          : "text-gray-700 hover:bg-gray-50"
+                      )}
+                    >
+                      {category === 'Naming' ? 'Brand Naming' : category}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Category pills */}
-            <div className="flex gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden flex-1 items-center">
+            <div className="hidden flex-1 items-center gap-2 md:flex">
               {categories.map((cat) => (
                 <button
                   key={cat}
@@ -184,20 +264,28 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
             </div>
 
             {/* Sort dropdown */}
-            <div className="relative shrink-0">
+            <div className="relative min-w-0 md:shrink-0">
               <button
-                onClick={() => setSortOpen(!sortOpen)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-md bg-white hover:border-gray-300 transition-colors cursor-pointer"
+                onClick={() => {
+                  setSortOpen(!sortOpen)
+                  setCategoryOpen(false)
+                }}
+                aria-expanded={sortOpen}
+                aria-haspopup="listbox"
+                className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-gray-300 md:w-auto md:px-4"
               >
-                Sort by: <span className="font-semibold text-gray-900">{sortLabels[sortBy]}</span>
+                <span className="min-w-0 truncate"><span className="hidden sm:inline">Sort by: </span><span className="font-semibold text-gray-900">{sortLabels[sortBy]}</span></span>
                 <ChevronDown className={cn("h-4 w-4 transition-transform", sortOpen && "rotate-180")} />
               </button>
 
               {sortOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                <div role="listbox" className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                   {(Object.keys(sortLabels) as SortOption[]).map((key) => (
                     <button
                       key={key}
+                      type="button"
+                      role="option"
+                      aria-selected={sortBy === key}
                       onClick={() => {
                         setSortBy(key)
                         setSortOpen(false)
@@ -375,7 +463,10 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
                 </p>
                 {hasAnyContests && (
                   <button
-                    onClick={() => setActiveCategory('All Categories')}
+                    onClick={() => {
+                      setActiveCategory('All Categories')
+                      setSortBy('newest')
+                    }}
                     className="text-[#6366F1] font-bold text-sm underline cursor-pointer"
                   >
                     Clear Filters

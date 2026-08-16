@@ -65,7 +65,7 @@ execute warnings, and leaked-password protection disabled.
 | Severity | Category | Verification |
 | --- | --- | --- |
 | high | auth | Enable leaked-password protection and verify OAuth redirects, admin assignment, and sessions. |
-| high | API | Run the Task 7 Razorpay test-mode checklist for Checkout signatures, browser-close recovery, replay handling, duplicate/out-of-order events, full refunds, and manual payout reconciliation. |
+| high | API | Run the Task 7 Razorpay test-mode checklist for Checkout signatures, browser-close recovery, replay handling, duplicate/out-of-order events, zero-submission prize-only refunds with the 5% fee retained, and manual payout reconciliation. |
 | medium | security | Permitted-user signed download passed locally on 2026-07-30. Verify unrelated-user denial, R2 CORS/object privacy, signed URL expiry, and post-winner cleanup. |
 | medium | deployment | Verify Netlify secrets, HTTPS, scheduled functions, runtime logs, and rollback procedure. |
 

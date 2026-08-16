@@ -5,7 +5,7 @@ interface RazorpayRefund {
   status: string
 }
 
-export async function createIdempotentFullRefund(input: {
+export async function createIdempotentRefund(input: {
   paymentId: string
   amount: number
   idempotencyKey: string

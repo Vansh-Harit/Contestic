@@ -19,7 +19,7 @@
 
 ## Environment contract
 
-The committed placeholder contract is `.env.example`. Required runtime areas are Supabase, Razorpay, R2, Resend, application/cron, Upstash, and Sentry.
+The committed placeholder contract is `.env.example`. Required runtime areas are Supabase, Razorpay, R2, Resend, application/cron, Upstash, Sentry, and PostHog product analytics.
 
 Do not commit `.env.local`. Before a deployment, compare host variables by name only with `.env.example`; do not copy secrets into documentation or logs.
 

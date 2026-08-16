@@ -18,6 +18,7 @@ import {
   MAX_ENTRIES,
   PLATFORM_FEE_PERCENT,
 } from '@/lib/constants'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 
 export default function PostContestPage() {
   const router = useRouter()
@@ -224,9 +225,25 @@ export default function PostContestPage() {
   }
 
   const handleNext = () => {
-    if (step === 1 && validateStep1()) setStep(2)
-    else if (step === 2 && validateStep2()) setStep(3)
-    else if (step === 3 && validateStep3()) setStep(4)
+    if (step === 1 && validateStep1()) {
+      captureAnalyticsEvent('contest_creation_step_completed', {
+        step: 1,
+        category: formData.category,
+      })
+      setStep(2)
+    } else if (step === 2 && validateStep2()) {
+      captureAnalyticsEvent('contest_creation_step_completed', {
+        step: 2,
+        category: formData.category,
+      })
+      setStep(3)
+    } else if (step === 3 && validateStep3()) {
+      captureAnalyticsEvent('contest_creation_step_completed', {
+        step: 3,
+        category: formData.category,
+      })
+      setStep(4)
+    }
   }
 
   const handleBack = () => {
@@ -293,6 +310,11 @@ export default function PostContestPage() {
               throw new Error('Payment verification failed')
             }
 
+            captureAnalyticsEvent('contest_payment_verified', {
+              contest_id,
+              category: formData.category,
+              prize_amount_inr: formData.prize_amount_inr,
+            })
             localStorage.removeItem('contestic_contest_draft')
             toast.success('Payment verified! Contest going live...')
             setTimeout(() => router.push('/dashboard/lister'), 2500)
@@ -304,12 +326,18 @@ export default function PostContestPage() {
         theme: { color: '#F59E0B' },
         modal: {
           ondismiss: () => {
+            captureAnalyticsEvent('contest_checkout_dismissed', { contest_id })
             toast.error('Payment cancelled.')
             setIsLoading(false)
           },
         },
       })
       rzp.open()
+      captureAnalyticsEvent('contest_checkout_opened', {
+        contest_id,
+        category: formData.category,
+        prize_amount_inr: formData.prize_amount_inr,
+      })
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Something went wrong'

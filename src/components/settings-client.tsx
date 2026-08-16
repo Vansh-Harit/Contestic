@@ -7,6 +7,7 @@ import { Camera, Loader2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_SIZE_BYTES } from '@/lib/constants'
 import { useAuth } from '@/components/auth-provider'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 
 interface SettingsClientProps {
   profile: {
@@ -69,6 +70,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
       setAvatarUrl(data.avatar_url)
       setPreviewUrl(null)
       await refreshProfile()
+      captureAnalyticsEvent('profile_updated', { update_kind: 'avatar_added' })
       toast.success('Profile picture updated')
       router.refresh()
     } catch (error) {
@@ -94,6 +96,7 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
       setAvatarUrl(null)
       setPreviewUrl(null)
       await refreshProfile()
+      captureAnalyticsEvent('profile_updated', { update_kind: 'avatar_removed' })
       toast.success('Profile picture removed')
       router.refresh()
     } catch (error) {
@@ -132,6 +135,10 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
       setFullName(data.profile.full_name)
       setBio(data.profile.bio ?? '')
       await refreshProfile()
+      captureAnalyticsEvent('profile_updated', {
+        update_kind: 'details',
+        has_bio: Boolean(data.profile.bio?.trim()),
+      })
       toast.success('Profile updated')
       router.refresh()
     } catch (error) {

@@ -15,7 +15,7 @@ const sections = [
   },
   {
     title: '4. Cancellations and contest outcomes',
-    body: 'A live contest cannot be cancelled by the host. If the submission period ends with zero submissions, including where users entered but nobody submitted, the host is eligible for a full refund of the prize and the 5% platform fee. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
+    body: 'A live contest cannot be cancelled by the host. If the submission period ends with zero submissions, including where no users entered or where users entered but nobody submitted, the host is eligible for a refund of the advertised prize amount only. The 5% Contestic platform fee is non-refundable and is retained. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
   },
   {
     title: '5. Submissions and intellectual property',
@@ -42,7 +42,7 @@ export default function TermsPage() {
       <header className="mt-6 border-b border-outline-variant pb-8">
         <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Legal</p>
         <h1 className="mt-2 font-heading text-4xl font-bold text-on-surface">Terms and conditions</h1>
-        <p className="mt-3 text-sm text-secondary">Effective 7 August 2026</p>
+        <p className="mt-3 text-sm text-secondary">Effective 13 August 2026</p>
       </header>
       <div className="mt-8 space-y-8">
         {sections.map((section) => (

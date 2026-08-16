@@ -1,12 +1,19 @@
 # Production Architecture and Migration Plan
 
-Last updated: 2026-08-06
+Last updated: 2026-08-13
 
-Purpose: evolve Contestic from a controlled beta into a scalable, operable product without a risky rewrite. This is a future-agent runbook, not approval to migrate services.
+Purpose: evolve Contestic from a controlled beta into a scalable, operable product without a risky rewrite. This is a future-agent runbook, not approval to migrate services. Detailed end-to-end playbooks for Cloudflare Workers Paid, Firebase App Hosting and direct Google Cloud Run are in `docs/HOSTING_MIGRATION_PLAYBOOKS.md`.
 
 ## Decision
 
-Keep the current Netlify deployment for beta validation. The recommended long-term architecture is:
+Keep the current Netlify deployment for beta validation. Capture one month of
+real usage, then compare Cloudflare Workers Paid, Firebase App Hosting and
+direct Google Cloud Run using `docs/HOSTING_MIGRATION_PLAYBOOKS.md`. Cloudflare
+is the first low-cost compatibility prototype; direct Cloud Run remains the
+reference architecture when greater runtime control and background-job
+separation are justified.
+
+The long-term reference architecture is:
 
 - **Cloudflare** for DNS, CDN and WAF.
 - **Google Cloud Run** for the containerized Next.js web/API service.

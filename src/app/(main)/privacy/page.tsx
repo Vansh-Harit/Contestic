@@ -14,12 +14,16 @@ const sections = [
     body: 'Information is used to authenticate users, operate contests, enforce entry and submission rules, deliver private briefs, enable creator-participant chat, process payments and payouts, send service emails, prevent abuse, investigate failures and improve platform reliability.',
   },
   {
+    title: 'Product analytics',
+    body: 'Contestic uses PostHog to understand page usage and a limited set of product outcomes such as contest entry, submission completion and verified payment completion. Automatic click and form capture, session replay, heatmaps, automatic exception capture and IP-derived location enrichment are disabled, and browser Do Not Track preferences are respected. Analytics does not intentionally include emails, names, private briefs, submission or chat text, filenames, external links, UPI or transfer references, Razorpay identifiers, URL query strings or URL fragments. Signed-in activity may be associated with an internal account identifier so the same user is not counted as multiple people.',
+  },
+  {
     title: 'Public and private information',
     body: 'Your display name, profile photo and bio may be viewed by other users. Private account, payment and payout information is not part of the public profile. Full briefs, participant materials, submissions and chats are restricted according to the user’s role and the contest stage.',
   },
   {
     title: 'Service providers',
-    body: 'Contestic uses service providers to operate the product, including Supabase for authentication and database services, Razorpay for payments, Cloudflare R2 for uploaded submission files, Resend for transactional email, and infrastructure, monitoring and security providers used by the application.',
+    body: 'Contestic uses service providers to operate the product, including Supabase for authentication and database services, Razorpay for payments, Cloudflare R2 for uploaded submission files, Resend for transactional email, PostHog for limited product analytics, and infrastructure, monitoring and security providers used by the application.',
   },
   {
     title: 'Retention and deletion',
@@ -27,7 +31,7 @@ const sections = [
   },
   {
     title: 'Your choices',
-    body: 'You can update your public name, profile photo and bio from Settings. You may contact contestic.support@gmail.com to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.',
+    body: 'You can update your public name, profile photo and bio from My Profile. You may contact contestic.support@gmail.com to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.',
   },
   {
     title: 'Security and changes',

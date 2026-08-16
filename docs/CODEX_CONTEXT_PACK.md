@@ -25,8 +25,9 @@ authorization or lifecycle behavior.
 
 - Commission is 5% and is paid by the contest creator in addition to the
   prize. A ₹1,000 prize therefore charges ₹1,050; the winner receives ₹1,000.
-- The full charged amount is refunded when the contest closes with zero
-  submissions, including when entries existed but nobody submitted.
+- When a contest closes with zero submissions, including when entries existed
+  but nobody submitted, only the advertised prize is refunded. The 5% platform
+  fee is non-refundable and retained by Contestic.
 - A live contest cannot be voluntarily cancelled.
 - Winner payouts are manual UPI transfers: the winner supplies UPI after
   selection, and an administrator records the real transaction reference.
@@ -43,6 +44,8 @@ authorization or lifecycle behavior.
 - Resend email: `src/lib/resend.ts`
 - Upstash rate limits: `src/lib/ratelimit.ts`
 - Sentry: `next.config.ts`, `instrumentation.ts`
+- PostHog product analytics: `src/instrumentation-client.ts`,
+  `src/lib/analytics.ts`, `docs/ANALYTICS_EVENT_CATALOG.md`
 - Supabase password recovery: `src/app/(auth)/forgot-password/page.tsx`,
   `src/app/(auth)/reset-password/page.tsx`, `src/app/api/auth/callback/route.ts`
 - Durable email outbox (applied to Contestic on 2026-08-01): `src/lib/email-delivery.ts`, `supabase/migrations/20260801201639_create_email_delivery_outbox.sql`
@@ -59,9 +62,16 @@ authorization or lifecycle behavior.
 
 - Initial Git baseline: `66a6dd6`.
 - `.env.local` is ignored; `.env.example` contains placeholders: `.gitignore`, `.env.example`.
+- Contestic is a live controlled beta at `https://contestic.in`, currently
+  hosted on Netlify. Keep Netlify for the first controlled month.
+- The future host is not selected. Compare Cloudflare Workers Paid, Firebase
+  App Hosting and direct Google Cloud Run only after collecting real usage.
+  Follow `docs/HOSTING_MIGRATION_PLAYBOOKS.md`; a host move retains Supabase and
+  is not a database migration.
 - TypeScript check passed on 2026-07-26.
 - ESLint failed on 2026-07-26 with 51 errors and 29 warnings; see `docs/ISSUE_REGISTER.md`.
-- `PRODUCT_STATE.md` says production is not yet deployed.
+- `PRODUCT_STATE.md` contains older pre-deployment context and is not the
+  current hosting source of truth.
 
 ## First reads before a production task
 
@@ -69,6 +79,7 @@ authorization or lifecycle behavior.
 - `docs/TESTING_REQUIREMENTS.md`
 - `docs/MIGRATION_PLAN.md`
 - `docs/PRODUCTION_LAUNCH_AND_SCALE_GUIDE.md`
+- `docs/HOSTING_MIGRATION_PLAYBOOKS.md`
 - `PRODUCT_STATE.md`
 
 The repository now contains hardening migrations under `supabase/migrations/`,

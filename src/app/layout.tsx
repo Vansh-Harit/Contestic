@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Toaster } from 'react-hot-toast'
 import { Inter, Oswald } from 'next/font/google'
+import { AnalyticsPageview } from '@/components/analytics-pageview'
 import './globals.css'
 
 const oswald = Oswald({
@@ -33,6 +34,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className={`min-h-full flex flex-col bg-background text-foreground ${oswald.variable} ${inter.variable} font-sans`} suppressHydrationWarning>
+        <AnalyticsPageview />
         {children}
         <Toaster position="bottom-right" />
       </body>

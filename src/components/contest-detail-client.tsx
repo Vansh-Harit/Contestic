@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -12,6 +12,7 @@ import { AlertCircle, Lock, ExternalLink, MessageCircle, Clock, Trophy, Share2, 
 import AuthModal from '@/components/auth-modal'
 import toast from 'react-hot-toast'
 import type { VisibleContest } from '@/lib/types'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 
 const SubmitDialog = dynamic(
   () => import('@/components/submit-dialog').then((module) => module.SubmitDialog),
@@ -77,6 +78,21 @@ export default function ContestDetailClient({
   const availableSlots = Math.max(0, entryLimit - entryCount)
   const submissionCount = contest.submission_count ?? contest.submissions?.[0]?.count ?? 0
 
+  useEffect(() => {
+    captureAnalyticsEvent('contest_viewed', {
+      contest_id: contest.id,
+      category: contest.category,
+      phase,
+      viewer_relationship: !user
+        ? 'anonymous'
+        : isLister
+          ? 'host'
+          : hasEntered
+            ? 'entrant'
+            : 'authenticated',
+    })
+  }, [contest.category, contest.id, hasEntered, isLister, phase, user])
+
   const handleEnterContest = async () => {
     if (!user) {
       setAuthModalOpen(true)
@@ -91,6 +107,10 @@ export default function ContestDetailClient({
         toast.error(data.error || 'Failed to enter contest')
       } else {
         setHasEntered(true)
+        captureAnalyticsEvent('contest_entered', {
+          contest_id: contest.id,
+          category: contest.category,
+        })
         toast.success('You have entered the contest', { position: 'top-center' })
         toast('You can now ask the host questions if needed.', {
           duration: 6000,
@@ -143,7 +163,19 @@ export default function ContestDetailClient({
     const disabledClass = 'min-h-11 rounded-lg border border-outline-variant bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-600'
     const primaryClass = 'min-h-11 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700'
 
-    if (isLister) return <button disabled className={disabledClass}>You are the host</button>
+    if (isLister) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <button disabled className={disabledClass}>You are the host</button>
+          <Link
+            href={`/dashboard/lister/contest/${contest.id}`}
+            className={primaryClass}
+          >
+            View submissions
+          </Link>
+        </div>
+      )
+    }
 
     if (phase === 'entry_open') {
       if (hasEntered) return <button disabled className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700">Entry confirmed</button>
@@ -164,7 +196,17 @@ export default function ContestDetailClient({
 
       return (
         <button
-          onClick={() => user ? setSubmitDialogOpen(true) : setAuthModalOpen(true)}
+          onClick={() => {
+            if (!user) {
+              setAuthModalOpen(true)
+              return
+            }
+            captureAnalyticsEvent('submission_started', {
+              contest_id: contest.id,
+              category: contest.category,
+            })
+            setSubmitDialogOpen(true)
+          }}
           className={primaryClass}
         >
           Submit your work

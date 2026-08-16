@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from '@sentry/nextjs';
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['192.168.1.12', 'debate-kennel-overact.ngrok-free.dev'],
+  allowedDevOrigins: ['192.168.1.12', '100.94.38.37', 'debate-kennel-overact.ngrok-free.dev'],
   
   async headers() {
     return [

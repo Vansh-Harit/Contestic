@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { ContestStatusBadge } from '@/components/contest-lifecycle'
 import type { Contest, SubmissionAttachment } from '@/lib/types'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 
 const ChatPanel = dynamic(() => import('@/components/chat-panel'), { ssr: false })
 
@@ -94,6 +95,10 @@ export default function SubmissionReviewClient({
         return
       }
 
+      captureAnalyticsEvent('winner_selected', {
+        contest_id: contest.id,
+        submission_count: submissions.length,
+      })
       toast.success('Winner selected. Submission and chat access is now closed.')
       setConfirmDialogOpen(false)
       setActiveChat(null)

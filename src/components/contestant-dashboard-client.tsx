@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { formatINR } from '@/lib/utils'
-import { Search, MessageCircle, Trophy, Clock, Settings, LayoutGrid, CheckCircle, Send, Award, WalletCards } from 'lucide-react'
+import { Search, MessageCircle, Trophy, Clock, LayoutGrid, CheckCircle, Send, Award, WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { ContestPhase } from '@/lib/utils'
 import type { ContestStatus } from '@/lib/types'
@@ -114,7 +114,7 @@ export default function ContestantDashboardClient({
       {/* Left Sidebar */}
       <aside className="flex w-full shrink-0 flex-col border-b border-gray-200 bg-gray-50 md:w-[220px] md:border-b-0 md:border-r">
         <div className="px-4 pt-5 md:px-5 md:pt-8">
-          <p className="font-heading text-xl font-bold text-on-surface">My contests</p>
+          <p className="font-heading text-xl font-bold text-on-surface">Participated contests</p>
         </div>
         {/* Nav Tabs */}
         <nav className="flex flex-1 gap-1 overflow-x-auto px-3 py-4 md:flex-col md:overflow-visible md:py-6">
@@ -136,16 +136,6 @@ export default function ContestantDashboardClient({
               </button>
             )
           })}
-
-          <div className="my-3 hidden border-t border-gray-200 md:block" />
-
-          <Link
-            href="/settings"
-            className="flex min-h-10 shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-500 transition-colors hover:bg-white hover:text-gray-700"
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            Settings
-          </Link>
         </nav>
 
       </aside>
@@ -188,7 +178,7 @@ export default function ContestantDashboardClient({
 
           {/* Page heading */}
           <div className="mb-6">
-            <h1 className="font-heading text-3xl font-bold text-gray-900">My contests</h1>
+            <h1 className="font-heading text-3xl font-bold text-gray-900">Participated contests</h1>
             <p className="mt-1 text-sm text-secondary">Track contests you entered and the next action for each one.</p>
           </div>
 

@@ -278,27 +278,37 @@ export async function POST(request: Request) {
     const refund = refundFromEvent(event)
     if (
       !refund ||
-      !['no_submissions', 'no_valid_submissions'].includes(
-        refund.notes?.reason ?? ''
-      )
+      refund.notes?.reason !== 'no_submissions'
     ) {
       return Response.json({ status: 'refund_ignored' }, { status: 200 })
     }
 
     const { data: paymentRecord, error: refundLookupError } = await supabase
       .from('payments')
-      .select('id, amount, payment_status')
+      .select('id, amount, prize_amount, platform_fee, payment_status')
       .eq('razorpay_payment_id', refund.payment_id)
       .single()
 
     if (refundLookupError || !paymentRecord) {
       return Response.json({ error: 'Refund payment unavailable' }, { status: 500 })
     }
-    if (refund.amount !== paymentRecord.amount) {
+    const expectedRefundAmount = Number(paymentRecord.prize_amount)
+    const retainedFee = Number(paymentRecord.platform_fee)
+    const chargedAmount = Number(paymentRecord.amount)
+    if (
+      !Number.isSafeInteger(expectedRefundAmount) ||
+      expectedRefundAmount <= 0 ||
+      !Number.isSafeInteger(retainedFee) ||
+      retainedFee < 0 ||
+      expectedRefundAmount + retainedFee !== chargedAmount ||
+      refund.amount !== expectedRefundAmount
+    ) {
       Sentry.captureMessage('Razorpay refund amount mismatch', { level: 'error' })
       return Response.json({ status: 'refund_mismatch_flagged' }, { status: 200 })
     }
     if (paymentRecord.payment_status !== 'refunded') {
+      // This is Contestic's completed refund obligation: the prize has been
+      // returned while the non-refundable platform fee remains retained.
       const { error: refundUpdateError } = await supabase
         .from('payments')
         .update({ payment_status: 'refunded' })

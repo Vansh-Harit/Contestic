@@ -41,7 +41,7 @@ export default function Navbar() {
         <div className="flex items-center">
           <Link
             href="/"
-            className="text-headline-md font-heading font-bold text-primary tracking-tight"
+            className="font-heading text-[1.65rem] font-bold tracking-tight text-primary"
           >
             Contestic
           </Link>
@@ -104,7 +104,7 @@ export default function Navbar() {
                       className={`flex items-center px-4 py-2 text-body-sm font-medium transition-colors hover:bg-surface-container-low ${pathname.startsWith('/dashboard/contestant') ? 'text-primary font-bold' : 'text-secondary hover:text-primary'
                         }`}
                     >
-                      My contests
+                      Participated contests
                     </Link>
                     <Link
                       href="/settings"
@@ -112,7 +112,7 @@ export default function Navbar() {
                       className={`flex items-center px-4 py-2 text-body-sm font-medium transition-colors hover:bg-surface-container-low ${pathname === '/settings' ? 'text-primary font-bold' : 'text-secondary hover:text-primary'
                         }`}
                     >
-                      Settings
+                      My Profile
                     </Link>
                     {profile?.role === 'admin' && (
                       <Link
@@ -204,7 +204,7 @@ export default function Navbar() {
                 onClick={() => setIsOpen(false)}
                 className={`text-body-md font-medium py-2 ${pathname.startsWith('/dashboard/contestant') ? 'text-primary font-bold' : 'text-secondary'}`}
               >
-                My contests
+                Participated contests
               </Link>
               {profile?.role === 'admin' && (
                 <Link
@@ -221,7 +221,7 @@ export default function Navbar() {
                 onClick={() => setIsOpen(false)}
                 className={`text-body-md font-medium py-2 ${pathname === '/settings' ? 'text-primary font-bold' : 'text-secondary'}`}
               >
-                Settings
+                My Profile
               </Link>
               <button
                 onClick={() => {
