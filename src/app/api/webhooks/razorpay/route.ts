@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { enqueueAndAttemptEmail } from '@/lib/email-delivery'
 import { verifyRazorpayWebhookSignature } from '@/lib/razorpay-signature'
 import * as Sentry from '@sentry/nextjs'
+import { createNotificationEvent } from '@/lib/notification-service'
 
 interface PaymentEntity {
   id: string
@@ -213,25 +214,17 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: existingNotification } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('contest_id', contest.id)
-      .eq('type', 'contest_live')
-      .limit(1)
-
-    if (!existingNotification?.length) {
-      const { error: notificationError } = await supabase.from('notifications').insert({
-        user_id: contest.lister_id,
+    try {
+      await createNotificationEvent({
+        userId: contest.lister_id,
         type: 'contest_live',
         title: 'Your contest is live!',
         message: `"${contest.title}" is now accepting entries.`,
-        contest_id: contest.id,
+        contestId: contest.id,
+        eventKey: `contest-live/${contest.id}/${contest.lister_id}`,
       })
-
-      if (notificationError) {
-        console.error('[Webhook] Contest-live notification failed')
-      }
+    } catch {
+      console.error('[Webhook] Contest-live notification failed')
     }
 
     const { data: lister } = await supabase
@@ -278,7 +271,7 @@ export async function POST(request: Request) {
     const refund = refundFromEvent(event)
     if (
       !refund ||
-      refund.notes?.reason !== 'no_submissions'
+      !['no_entries', 'no_submissions'].includes(refund.notes?.reason ?? '')
     ) {
       return Response.json({ status: 'refund_ignored' }, { status: 200 })
     }

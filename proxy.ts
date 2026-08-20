@@ -44,6 +44,7 @@ export const config = {
     '/dashboard/:path*',
     '/post',
     '/settings',
+    '/notifications',
     '/admin/:path*',
   ],
 }

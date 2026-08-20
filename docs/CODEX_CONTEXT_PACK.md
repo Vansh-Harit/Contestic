@@ -25,9 +25,10 @@ authorization or lifecycle behavior.
 
 - Commission is 5% and is paid by the contest creator in addition to the
   prize. A ₹1,000 prize therefore charges ₹1,050; the winner receives ₹1,000.
-- When a contest closes with zero submissions, including when entries existed
-  but nobody submitted, only the advertised prize is refunded. The 5% platform
-  fee is non-refundable and retained by Contestic.
+- When entry closes with zero entrants, the next scheduled lifecycle run closes
+  the contest and refunds only the advertised prize. If entries existed but
+  nobody submitted, the same prize-only refund occurs after the submission
+  deadline. The 5% platform fee is non-refundable and retained by Contestic.
 - A live contest cannot be voluntarily cancelled.
 - Winner payouts are manual UPI transfers: the winner supplies UPI after
   selection, and an administrator records the real transaction reference.

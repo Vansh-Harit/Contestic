@@ -381,16 +381,10 @@ export default function BrowseClient({ initialContests }: { initialContests: Vis
                         )}
 
                         {phase === 'submission_open' && (
-                          <>
-                            <span className="flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5" />
-                              {endsIn > 0 ? `${endsIn} day${endsIn !== 1 ? 's' : ''} left` : 'Closing soon'}
-                            </span>
-                            <span className="flex items-center gap-1.5">
-                              <Users className="h-3.5 w-3.5" />
-                              {contest.submission_count || 0} submitted
-                            </span>
-                          </>
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5" />
+                            {endsIn > 0 ? `${endsIn} day${endsIn !== 1 ? 's' : ''} left` : 'Closing soon'}
+                          </span>
                         )}
 
                         {phase === 'judging' && (

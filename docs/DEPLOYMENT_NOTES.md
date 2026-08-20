@@ -13,6 +13,13 @@
   published deploy is the production context and
   `NETLIFY_SCHEDULED_JOBS_ENABLED=true`.
 - The cron route requires `Authorization: Bearer <CRON_SECRET>`: `src/app/api/cron/check-expired/route.ts`.
+- Netlify evaluates the committed `0 */6 * * *` schedule in UTC. Its expected
+  India times are 05:30, 11:30, 17:30 and 23:30 IST, so a deadline transition
+  may be processed up to six hours after the exact cutoff.
+- The cron route performs a bounded email-recovery pass before lifecycle work
+  and another pass afterward so newly queued lifecycle mail does not wait for
+  the next six-hour run. Verify the complete background invocation remains
+  below its 55-second application timeout.
 - The obsolete Vercel schedule file has been removed after its Netlify
   replacement was added.
 - `PRODUCT_STATE.md` records that production is not yet deployed.
@@ -67,10 +74,11 @@ See `docs/PRODUCTION_LAUNCH_AND_SCALE_GUIDE.md` for the quiet public-beta
 sequence, password-recovery provider setup, custom-domain cutover, scaling/cost
 triggers, disaster recovery and the optional Cloudflare Workers migration.
 
-## Readiness checkpoint — 2026-08-06
+## Readiness checkpoint — 2026-08-20
 
-- Next.js 16.3.0 production build, TypeScript, lint, 16 focused tests, diff
-  validation and the production dependency audit pass locally.
+- Next.js 16.3.0 production build, TypeScript, lint, 23 focused tests, diff
+  validation and the production dependency audit pass locally. Lint retains
+  11 documented image-delivery warnings and zero errors.
 - The Netlify offline adapter completed the application build and reached
   function packaging. Windows then denied a local symlink operation; the first
   real Deploy Preview is the authoritative Linux packaging check.

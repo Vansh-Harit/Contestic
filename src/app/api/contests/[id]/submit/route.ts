@@ -4,6 +4,7 @@ import { MAX_SUBMISSION_CHARS, MIN_SUBMISSION_CHARS } from '@/lib/constants'
 import { deliverPendingEmails, enqueueEmail } from '@/lib/email-delivery'
 import { submitRatelimit } from '@/lib/ratelimit'
 import { normalizeSubmissionAttachments } from '@/lib/submission-files'
+import { createNotificationEvent } from '@/lib/notification-service'
 
 export async function POST(
   request: Request,
@@ -236,27 +237,24 @@ export async function POST(
     return Response.json({ error: 'Failed to create submission' }, { status: 500 })
   }
 
-  // 8. Notification debounce — only notify lister if no notification of type
-  //    'new_submission' for this contest was created in the last 60 minutes
-  const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const { data: recentNotif } = await admin
-    .from('notifications')
-    .select('id')
-    .eq('user_id', contest.lister_id)
-    .eq('type', 'new_submission')
-    .eq('contest_id', contestId)
-    .gt('created_at', sixtyMinutesAgo)
-    .limit(1)
-    .single()
-
-  if (!recentNotif) {
-    await admin.from('notifications').insert({
-      user_id: contest.lister_id,
+  // 8. Group creator updates into one stable UTC-hour event. A concurrent
+  // submission cannot create a duplicate notification for the same hour.
+  const hourBucket = new Date().toISOString().slice(0, 13)
+  let notificationCreated = false
+  try {
+    notificationCreated = await createNotificationEvent({
+      userId: contest.lister_id,
       type: 'new_submission',
       title: 'New submission received',
-      message: `Your contest received a new entry.`,
-      contest_id: contestId,
+      message: `A new submission is ready to review for "${contest.title}".`,
+      contestId,
+      eventKey: `new-submission/${contestId}/${hourBucket}`,
     })
+  } catch {
+    console.error('[Submit] Creator notification failed')
+  }
+
+  if (notificationCreated) {
 
     // Queue one creator summary per hour. Delivery retries independently.
     const { data: lister } = await admin
@@ -267,7 +265,6 @@ export async function POST(
 
     if (lister?.email) {
       const submissionCount = (totalSubmissions ?? 0) + 1
-      const hourBucket = Math.floor(Date.now() / (60 * 60 * 1000))
       await enqueueEmail({
         idempotencyKey: `new-submission/${contestId}/${hourBucket}`,
         eventType: 'new_submission',

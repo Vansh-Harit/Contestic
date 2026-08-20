@@ -15,7 +15,7 @@ const sections = [
   },
   {
     title: '4. Cancellations and contest outcomes',
-    body: 'A live contest cannot be cancelled by the host. If the submission period ends with zero submissions, including where no users entered or where users entered but nobody submitted, the host is eligible for a refund of the advertised prize amount only. The 5% Contestic platform fee is non-refundable and is retained. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
+    body: 'A live contest cannot be cancelled by the host. If the entry period closes with no entrants, the contest closes and the host is eligible for a refund of the advertised prize amount only. If users entered but nobody submits before the submission deadline, the same prize-only refund applies then. In both cases, the 5% Contestic platform fee is non-refundable and is retained. If submissions exist but the host does not select a winner within three days of judging beginning, the host is not refunded: Contestic retains the platform fee and the prize is allocated manually among participants whose submissions are confirmed valid after review. Payment disputes, suspected abuse and exceptional failures may be held for manual review.',
   },
   {
     title: '5. Submissions and intellectual property',

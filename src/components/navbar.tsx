@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuth } from '@/components/auth-provider'
+import NotificationMenu from '@/components/notification-menu'
 
 export default function Navbar() {
   const pathname = usePathname()
@@ -57,6 +58,8 @@ export default function Navbar() {
               >
                 Host a contest
               </button>
+
+              <NotificationMenu />
 
               <div className="relative profile-dropdown-container">
                 <button
@@ -191,6 +194,13 @@ export default function Navbar() {
                 className={`text-body-md font-medium py-2 ${isActive('/') ? 'text-primary font-bold' : 'text-secondary'}`}
               >
                 Browse
+              </Link>
+              <Link
+                href="/notifications"
+                onClick={() => setIsOpen(false)}
+                className={`text-body-md font-medium py-2 ${pathname === '/notifications' ? 'text-primary font-bold' : 'text-secondary'}`}
+              >
+                Notifications
               </Link>
               <Link
                 href="/dashboard/lister"

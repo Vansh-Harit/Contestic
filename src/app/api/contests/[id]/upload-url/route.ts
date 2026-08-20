@@ -10,6 +10,7 @@ const ALLOWED_TYPES = [
   'image/jpeg',
   'image/png',
   'image/webp',
+  'image/svg+xml',
   'application/pdf',
 ]
 
@@ -61,7 +62,7 @@ export async function POST(
   // 4. Validate content type
   if (!ALLOWED_TYPES.includes(contentType)) {
     return Response.json(
-      { error: 'File type not supported. Use JPG, PNG, WebP, or PDF.' },
+      { error: 'File type not supported. Use JPG, PNG, WebP, SVG, or PDF.' },
       { status: 400 }
     )
   }

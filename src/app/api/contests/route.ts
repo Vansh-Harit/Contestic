@@ -8,6 +8,7 @@ import { createContestRatelimit } from '@/lib/ratelimit'
 import type { ContestFormData } from '@/lib/types'
 import type { RazorpayOrder } from 'razorpay'
 import { randomUUID } from 'crypto'
+import { contestDeadlineToIso } from '@/lib/contest-deadline'
 
 type ContestRequestBody = Partial<ContestFormData> & {
   resume_contest_id?: unknown
@@ -165,7 +166,12 @@ export async function POST(request: Request) {
     )
   }
 
-  if (new Date(deadline).getTime() <= Date.now()) {
+  const deadlineIso = contestDeadlineToIso(deadline)
+  if (!deadlineIso) {
+    return NextResponse.json({ error: 'Invalid submission deadline' }, { status: 400 })
+  }
+
+  if (new Date(deadlineIso).getTime() <= Date.now()) {
     return NextResponse.json({ error: 'Deadline must be a future date' }, { status: 400 })
   }
 
@@ -176,7 +182,7 @@ export async function POST(request: Request) {
 
   // Deadline must be far enough in the future to fit the entry window + buffer
   const minDeadlineMs = Date.now() + (hours + 2) * 60 * 60 * 1000
-  if (new Date(deadline).getTime() < minDeadlineMs) {
+  if (new Date(deadlineIso).getTime() < minDeadlineMs) {
     return NextResponse.json(
       { error: `Submission deadline must be at least ${hours + 2} hours from now to allow for the ${hours}-hour entry window.` },
       { status: 400 }
@@ -223,7 +229,7 @@ export async function POST(request: Request) {
     .eq('category', category)
     .eq('prize_amount', prizePaise)
     .eq('max_entries', entries)
-    .eq('deadline', new Date(deadline).toISOString())
+    .eq('deadline', deadlineIso)
     .eq('ai_policy', ai_policy)
     .eq('entry_window_hours', hours)
     .gte('created_at', new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString())
@@ -334,7 +340,7 @@ export async function POST(request: Request) {
       platform_fee: platformFee,
       total_charged: total,
       max_entries: entries,
-      deadline: new Date(deadline).toISOString(),
+      deadline: deadlineIso,
       ai_policy,
       status: 'draft',
       razorpay_order_id: order.id,

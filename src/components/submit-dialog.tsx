@@ -58,9 +58,9 @@ export function SubmitDialog({
     .reduce((sum, f) => sum + f.size_bytes, 0)
 
   const getHelperText = () => {
-    if (category === 'Design') return 'Upload your design as JPG, PNG, or PDF. Max 20MB total.'
+    if (category === 'Design') return 'Upload your work as JPG, PNG, WebP, SVG, or PDF. Max 20MB total.'
     if (category === 'Content Writing') return 'Format your content as a PDF and upload it here. Max 20MB.'
-    return 'Upload a supporting file (JPG, PNG, or PDF). Max 20MB.'
+    return 'Upload your work as JPG, PNG, WebP, SVG, or PDF. Max 20MB total.'
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,7 +329,7 @@ export function SubmitDialog({
                 <input
                   id="file-upload-input"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml,application/pdf"
                   onChange={handleFileSelect}
                   className="hidden"
                   disabled={uploading}
@@ -343,7 +343,7 @@ export function SubmitDialog({
                     Click to select a file
                   </span>
                   <span className="text-xs text-secondary/70">
-                    JPG, PNG, WebP, or PDF up to 20MB
+                    JPG, PNG, WebP, SVG, or PDF up to 20MB
                   </span>
                 </label>
               </div>

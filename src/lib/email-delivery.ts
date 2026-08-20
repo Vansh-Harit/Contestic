@@ -32,6 +32,22 @@ export interface EmailDeliverySummary {
   claimFailed: boolean
 }
 
+export async function getExistingEmailDeliveryKeysForContests(
+  contestIds: string[]
+): Promise<Set<string>> {
+  const uniqueContestIds = [...new Set(contestIds)]
+  if (uniqueContestIds.length === 0) return new Set()
+
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('email_deliveries')
+    .select('idempotency_key')
+    .in('contest_id', uniqueContestIds)
+
+  if (error) throw error
+  return new Set((data ?? []).map((row) => row.idempotency_key))
+}
+
 function retryAt(attempts: number): string {
   const minutes = Math.min(5 * 2 ** Math.max(attempts - 1, 0), 360)
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
@@ -101,7 +117,7 @@ export async function deliverPendingEmails(
   const deliveries = (data ?? []) as ClaimedDelivery[]
   summary.claimed = deliveries.length
 
-  for (const delivery of deliveries) {
+  const processDelivery = async (delivery: ClaimedDelivery): Promise<boolean> => {
     try {
       const rendered = renderQueuedEmail(delivery.event_type, delivery.payload)
       const providerMessageId = await sendEmail(
@@ -126,7 +142,7 @@ export async function deliverPendingEmails(
         .eq('status', 'processing')
 
       if (sentError) throw sentError
-      summary.sent++
+      return true
     } catch (deliveryError) {
       const message = safeErrorMessage(deliveryError)
       const exhausted = delivery.attempts >= delivery.max_attempts
@@ -148,7 +164,22 @@ export async function deliverPendingEmails(
         extra: { deliveryId: delivery.id, attempts: delivery.attempts },
       })
       console.error('[Email] Queued delivery failed:', delivery.id)
-      summary.failed++
+      return false
+    }
+  }
+
+  // Keep throughput inside the documented provider limit while avoiding a
+  // long serial send loop that can outlive Netlify's lifecycle invocation.
+  const concurrency = 2
+  for (let index = 0; index < deliveries.length; index += concurrency) {
+    const results = await Promise.all(
+      deliveries.slice(index, index + concurrency).map(processDelivery)
+    )
+    summary.sent += results.filter(Boolean).length
+    summary.failed += results.filter((sent) => !sent).length
+
+    if (index + concurrency < deliveries.length) {
+      await new Promise((resolve) => setTimeout(resolve, 450))
     }
   }
 

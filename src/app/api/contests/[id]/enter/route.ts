@@ -7,6 +7,10 @@ import {
   deliverPendingEmails,
   enqueueEmail,
 } from '@/lib/email-delivery'
+import {
+  createNotificationEvent,
+  createNotificationEvents,
+} from '@/lib/notification-service'
 
 type JoinedEntryProfile = {
   email: string | null
@@ -202,19 +206,37 @@ export async function POST(
 
   // Check if this entry just filled the contest → notify lister
   if (currentCount >= effectiveLimit) {
-    await admin.from('notifications').insert({
-      user_id: contest.lister_id,
-      type: 'contest_full',
-      title: 'Your contest is full!',
-      message: `All ${effectiveLimit} spots taken for "${contest.title}". Submission window is now open for participants.`,
-      contest_id: params.id,
-    })
+    try {
+      await createNotificationEvent({
+        userId: contest.lister_id,
+        type: 'contest_full',
+        title: 'Your contest is full!',
+        message: `All ${effectiveLimit} spots are taken for "${contest.title}". The submission window is now open for participants.`,
+        contestId: params.id,
+        eventKey: `contest-full/${params.id}/${contest.lister_id}`,
+      })
+    } catch {
+      console.error('[Entry] Contest-full notification failed')
+    }
 
     const { data: allEntries } = await admin
       .from('contest_entries')
       .select('contestant_id, profiles(email, full_name)')
       .eq('contest_id', params.id)
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+    try {
+      await createNotificationEvents((allEntries ?? []).map((entry) => ({
+        userId: entry.contestant_id,
+        type: 'entry_closed',
+        title: 'Submission window open',
+        message: `Entry for "${contest.title}" has closed. The full brief and materials are now available.`,
+        contestId: params.id,
+        eventKey: `submission-open/${params.id}/${entry.contestant_id}`,
+      })))
+    } catch {
+      console.error('[Entry] Submission-open notifications failed')
+    }
 
     for (const entry of allEntries ?? []) {
       const profile = normalizeEntryProfile(entry.profiles)
@@ -237,28 +259,6 @@ export async function POST(
       })
     }
     await deliverPendingEmails(25)
-  } else {
-    // Debounced new_entry notification (60-min window)
-    const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const { data: recentNotif } = await admin
-      .from('notifications')
-      .select('id')
-      .eq('user_id', contest.lister_id)
-      .eq('type', 'new_entry')
-      .eq('contest_id', params.id)
-      .gt('created_at', sixtyMinutesAgo)
-      .limit(1)
-      .single()
-
-    if (!recentNotif) {
-      await admin.from('notifications').insert({
-        user_id: contest.lister_id,
-        type: 'new_entry',
-        title: 'New participant!',
-        message: `Someone entered "${contest.title}"`,
-        contest_id: params.id,
-      })
-    }
   }
 
   await deliverPendingEmails(10)

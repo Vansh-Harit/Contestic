@@ -1,6 +1,6 @@
 # Contestic Project Stage and Handoff
 
-Last updated: 2026-08-16
+Last updated: 2026-08-20
 
 This is the first-stop project handoff for a new engineer or AI agent. Detailed risks remain in `docs/ISSUE_REGISTER.md`; executable work remains in `docs/MIGRATION_BOARD.md`.
 
@@ -35,7 +35,7 @@ Contestic is a contest marketplace:
 Financial rules already documented in the application:
 
 - Example: ₹1,000 prize + ₹50 fee = ₹1,050 paid by the creator; winner receives ₹1,000.
-- If there are zero submissions when judging begins, the advertised prize is refundable but the 5% platform fee is retained. This also applies when no users entered.
+- If entry closes with zero entrants, the next scheduled lifecycle run closes the contest and refunds the advertised prize while retaining the 5% platform fee. If users entered but nobody submits, the same prize-only refund occurs after the submission deadline.
 - A live contest cannot be voluntarily cancelled.
 - If no winner is selected within three days, the platform retains its fee and the prize is manually allocated among valid submitters after review.
 

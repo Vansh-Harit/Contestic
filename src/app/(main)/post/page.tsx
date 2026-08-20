@@ -19,6 +19,12 @@ import {
   PLATFORM_FEE_PERCENT,
 } from '@/lib/constants'
 import { captureAnalyticsEvent } from '@/lib/analytics'
+import {
+  contestDeadlineToIso,
+  formatContestDeadlineInIndia,
+  getIndiaCalendarDate,
+  splitContestDeadlineForIndia,
+} from '@/lib/contest-deadline'
 
 export default function PostContestPage() {
   const router = useRouter()
@@ -129,19 +135,6 @@ export default function PostContestPage() {
     return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
   }
 
-  const splitDateTime = (iso: string) => {
-    if (!iso) return { date: '', time: '12:00' }
-    // iso can be "YYYY-MM-DDTHH:MM" or a full ISO string
-    const d = new Date(iso)
-    if (isNaN(d.getTime())) return { date: '', time: '12:00' }
-    const yyyy = d.getFullYear()
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0')
-    const dd = d.getDate().toString().padStart(2, '0')
-    const hh = d.getHours().toString().padStart(2, '0')
-    const min = d.getMinutes().toString().padStart(2, '0')
-    return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` }
-  }
-
   const mergeDateTime = (date: string, time: string) => {
     if (!date) return ''
     return `${date}T${time}`
@@ -150,7 +143,7 @@ export default function PostContestPage() {
   const getTomorrowDate = () => {
     const d = new Date()
     d.setDate(d.getDate() + 1)
-    return d.toISOString().slice(0, 10)
+    return getIndiaCalendarDate(d)
   }
 
   // Computed fee values
@@ -217,7 +210,8 @@ export default function PostContestPage() {
       toast.error(`Entries must be between ${MIN_ENTRIES} and ${MAX_ENTRIES}`)
       return false
     }
-    if (!formData.deadline || new Date(formData.deadline).getTime() <= Date.now()) {
+    const deadline = contestDeadlineToIso(formData.deadline)
+    if (!deadline || new Date(deadline).getTime() <= Date.now()) {
       toast.error('Deadline must be a future date')
       return false
     }
@@ -254,11 +248,16 @@ export default function PostContestPage() {
   async function handlePayment() {
     setIsLoading(true)
     try {
+      const deadline = contestDeadlineToIso(formData.deadline)
+      if (!deadline) {
+        throw new Error('Please choose a valid submission deadline')
+      }
       const res = await fetch('/api/contests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          deadline,
           ...(draftContestId ? { resume_contest_id: draftContestId } : {}),
         }),
       })
@@ -826,9 +825,9 @@ export default function PostContestPage() {
                   <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary pointer-events-none" />
                   <input
                     type="date"
-                    value={splitDateTime(formData.deadline).date}
+                    value={splitContestDeadlineForIndia(formData.deadline).date}
                     onChange={(e) => {
-                      const time = splitDateTime(formData.deadline).time
+                      const time = splitContestDeadlineForIndia(formData.deadline).time
                       updateField('deadline', mergeDateTime(e.target.value, time))
                     }}
                     min={getTomorrowDate()}
@@ -838,9 +837,9 @@ export default function PostContestPage() {
                 <div className="relative w-40">
                   <Clock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary pointer-events-none" />
                   <select
-                    value={splitDateTime(formData.deadline).time}
+                    value={splitContestDeadlineForIndia(formData.deadline).time}
                     onChange={(e) => {
-                      const date = splitDateTime(formData.deadline).date
+                      const date = splitContestDeadlineForIndia(formData.deadline).date
                       if (date) updateField('deadline', mergeDateTime(date, e.target.value))
                     }}
                     className="w-full p-4 pl-11 bg-transparent border border-outline-variant rounded-lg focus:outline-none focus:border-primary-container font-body-md transition-all outline-none appearance-none cursor-pointer"
@@ -946,9 +945,7 @@ export default function PostContestPage() {
                   <div>
                     <dt className="text-xs font-medium text-secondary">Submission deadline</dt>
                     <dd className="mt-1 text-sm font-semibold text-on-surface">
-                      {formData.deadline
-                        ? new Date(formData.deadline).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
-                        : 'Not set'}
+                      {formatContestDeadlineInIndia(formData.deadline)}
                     </dd>
                   </div>
                   <div className="sm:col-span-2">
