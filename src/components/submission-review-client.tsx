@@ -111,16 +111,24 @@ export default function SubmissionReviewClient({
     }
   }
 
-  const isImageUrl = (url: string) => /\.(jpg|jpeg|png|webp)$/i.test(url)
-  const isPdfUrl = (url: string) => /\.pdf$/i.test(url)
+  const hasFileExtension = (
+    file: ReviewAttachment,
+    extensionPattern: RegExp
+  ) => [file.filename, file.key, file.url].some(
+    (value) => typeof value === 'string' && extensionPattern.test(value)
+  )
+  const isImageAttachment = (file: ReviewAttachment) =>
+    hasFileExtension(file, /\.(jpg|jpeg|jfif|png|webp|svg)(?:$|[?#])/i)
+  const isPdfAttachment = (file: ReviewAttachment) =>
+    hasFileExtension(file, /\.pdf(?:$|[?#])/i)
   const accessHasEnded = phase === 'completed' || phase === 'cancelled'
   const selectedSubmission = submissions.find((submission) => submission.contestant_id === selectedEntrantId)
 
   const renderAttachments = (files: ReviewAttachment[]) => {
     if (!files?.length) return <p className="text-sm text-secondary">No files or external links were attached.</p>
 
-    const images = files.filter((file): file is ReviewAttachment & { url: string } => file.type === 'upload' && !!file.url && isImageUrl(file.url))
-    const pdfs = files.filter((file): file is ReviewAttachment & { url: string } => file.type === 'upload' && !!file.url && isPdfUrl(file.url))
+    const images = files.filter((file): file is ReviewAttachment & { url: string } => file.type === 'upload' && !!file.url && isImageAttachment(file))
+    const pdfs = files.filter((file): file is ReviewAttachment & { url: string } => file.type === 'upload' && !!file.url && isPdfAttachment(file))
     const driveLinks = files.filter((file): file is ReviewAttachment & { url: string } => file.type === 'drive_link' && !!file.url)
 
     return (
