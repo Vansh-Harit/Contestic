@@ -8,7 +8,11 @@ import { createContestRatelimit } from '@/lib/ratelimit'
 import type { ContestFormData } from '@/lib/types'
 import type { RazorpayOrder } from 'razorpay'
 import { randomUUID } from 'crypto'
-import { contestDeadlineToIso } from '@/lib/contest-deadline'
+import {
+  contestDeadlineToIso,
+  isContestDeadlineWithinLimit,
+  MAX_CONTEST_DEADLINE_DAYS,
+} from '@/lib/contest-deadline'
 
 type ContestRequestBody = Partial<ContestFormData> & {
   resume_contest_id?: unknown
@@ -173,6 +177,13 @@ export async function POST(request: Request) {
 
   if (new Date(deadlineIso).getTime() <= Date.now()) {
     return NextResponse.json({ error: 'Deadline must be a future date' }, { status: 400 })
+  }
+
+  if (!isContestDeadlineWithinLimit(deadlineIso)) {
+    return NextResponse.json(
+      { error: `Submission deadline cannot be more than ${MAX_CONTEST_DEADLINE_DAYS} days from today` },
+      { status: 400 }
+    )
   }
 
   const hours = entry_window_hours ? Number(entry_window_hours) : 24

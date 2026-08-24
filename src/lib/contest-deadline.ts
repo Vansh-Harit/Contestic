@@ -2,6 +2,8 @@ const INDIA_TIME_ZONE = 'Asia/Kolkata'
 const INDIA_UTC_OFFSET = '+05:30'
 const LOCAL_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?$/
 
+export const MAX_CONTEST_DEADLINE_DAYS = 21
+
 export function parseContestDeadline(value: string): Date | null {
   const trimmed = value.trim()
   const localMatch = LOCAL_DATE_TIME.exec(trimmed)
@@ -60,6 +62,30 @@ export function getIndiaCalendarDate(value = new Date()): string {
     parts.find((item) => item.type === type)?.value ?? ''
 
   return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+export function getLatestContestDeadlineDate(value = new Date()): string {
+  return getIndiaCalendarDate(
+    new Date(value.getTime() + MAX_CONTEST_DEADLINE_DAYS * 24 * 60 * 60 * 1000)
+  )
+}
+
+export function isContestDeadlineWithinLimit(
+  value: string,
+  now = new Date()
+): boolean {
+  const deadline = parseContestDeadline(value)
+  if (!deadline) return false
+
+  const latestDate = getLatestContestDeadlineDate(now)
+  const startOfLatestDate = parseContestDeadline(`${latestDate}T00:00`)
+  const startOfFollowingDate = startOfLatestDate
+    ? new Date(startOfLatestDate.getTime() + 24 * 60 * 60 * 1000)
+    : null
+
+  return Boolean(
+    startOfFollowingDate && deadline.getTime() < startOfFollowingDate.getTime()
+  )
 }
 
 export function formatContestDeadlineInIndia(value: string): string {

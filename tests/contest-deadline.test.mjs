@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   contestDeadlineToIso,
   formatContestDeadlineInIndia,
+  getLatestContestDeadlineDate,
+  isContestDeadlineWithinLimit,
   splitContestDeadlineForIndia,
 } from '../src/lib/contest-deadline.ts'
 
@@ -32,4 +34,18 @@ test('formats the review deadline explicitly in India time', () => {
     formatContestDeadlineInIndia('2026-08-21T16:30:00.000Z'),
     /10:00 pm/i
   )
+})
+
+test('calculates the latest submission deadline date in India time', () => {
+  assert.equal(
+    getLatestContestDeadlineDate(new Date('2026-08-24T18:45:00.000Z')),
+    '2026-09-15'
+  )
+})
+
+test('allows any time on the twenty-first India calendar day', () => {
+  const now = new Date('2026-08-24T18:45:00.000Z')
+
+  assert.equal(isContestDeadlineWithinLimit('2026-09-15T23:30', now), true)
+  assert.equal(isContestDeadlineWithinLimit('2026-09-16T00:00', now), false)
 })

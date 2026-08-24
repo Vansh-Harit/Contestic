@@ -23,6 +23,9 @@ import {
   contestDeadlineToIso,
   formatContestDeadlineInIndia,
   getIndiaCalendarDate,
+  getLatestContestDeadlineDate,
+  isContestDeadlineWithinLimit,
+  MAX_CONTEST_DEADLINE_DAYS,
   splitContestDeadlineForIndia,
 } from '@/lib/contest-deadline'
 
@@ -213,6 +216,10 @@ export default function PostContestPage() {
     const deadline = contestDeadlineToIso(formData.deadline)
     if (!deadline || new Date(deadline).getTime() <= Date.now()) {
       toast.error('Deadline must be a future date')
+      return false
+    }
+    if (!isContestDeadlineWithinLimit(deadline)) {
+      toast.error(`Submission deadline cannot be more than ${MAX_CONTEST_DEADLINE_DAYS} days from today`)
       return false
     }
     return true
@@ -831,6 +838,7 @@ export default function PostContestPage() {
                       updateField('deadline', mergeDateTime(e.target.value, time))
                     }}
                     min={getTomorrowDate()}
+                    max={getLatestContestDeadlineDate()}
                     className="w-full p-4 pl-11 bg-transparent border border-outline-variant rounded-lg focus:outline-none focus:border-primary-container font-body-md transition-all outline-none"
                   />
                 </div>
@@ -851,7 +859,7 @@ export default function PostContestPage() {
                 </div>
               </div>
               <span className="text-xs text-secondary">
-                Pick a date and time for submissions to close
+                Pick a date and time for submissions to close, up to {MAX_CONTEST_DEADLINE_DAYS} days from today
               </span>
             </div>
 
