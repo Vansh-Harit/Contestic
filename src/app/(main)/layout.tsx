@@ -46,7 +46,9 @@ export default function MainLayout({
             <h2 className="text-sm font-semibold text-on-surface">Socials &amp; Support</h2>
             <div className="mt-3 flex items-center gap-3">
               <a
-                href="mailto:contestic.support@gmail.com"
+                href="https://mail.google.com/mail/?view=cm&fs=1&to=contestic.support%40gmail.com&su=Contestic%20support"
+                target="_blank"
+                rel="noopener noreferrer"
                 aria-label="Email Contestic support"
                 title="Email Contestic support"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant text-secondary transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-primary"

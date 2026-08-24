@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Camera, Loader2, Trash2 } from 'lucide-react'
+import { Camera, Loader2, Trash2, WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_SIZE_BYTES } from '@/lib/constants'
 import { useAuth } from '@/components/auth-provider'
@@ -16,6 +16,7 @@ interface SettingsClientProps {
     avatarUrl: string | null
     bio: string
     email: string
+    upiId: string
   }
 }
 
@@ -27,6 +28,8 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
   const [fullName, setFullName] = useState(profile.fullName)
   const [bio, setBio] = useState(profile.bio)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [upiId, setUpiId] = useState(profile.upiId)
+  const [isSavingUpi, setIsSavingUpi] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const { refreshProfile } = useAuth()
@@ -149,6 +152,44 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
     }
   }
 
+  async function handleSaveUpi(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedUpiId = upiId.trim()
+
+    if (
+      normalizedUpiId.length < 5 ||
+      normalizedUpiId.length > 50 ||
+      !normalizedUpiId.includes('@')
+    ) {
+      toast.error('Enter a valid UPI ID (for example, name@bank)')
+      return
+    }
+
+    setIsSavingUpi(true)
+    try {
+      const res = await fetch('/api/profile/upi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upi_id: normalizedUpiId }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to save UPI ID')
+        return
+      }
+
+      setUpiId(normalizedUpiId)
+      toast.success('UPI ID saved privately')
+      router.refresh()
+    } catch (error) {
+      console.error('[UPI Update]', error)
+      toast.error('Network error — please try again')
+    } finally {
+      setIsSavingUpi(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
@@ -251,6 +292,52 @@ export default function SettingsClient({ profile }: SettingsClientProps) {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+            <WalletCards className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="font-heading text-xl font-bold text-on-surface">Payout details</h2>
+            <p className="mt-1 text-sm text-secondary">
+              Save a UPI ID now so a future prize payout can be prepared without delay.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveUpi} className="mt-6">
+          <label htmlFor="upi-id" className="mb-1.5 block text-sm font-medium text-on-surface">
+            UPI ID
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <input
+              id="upi-id"
+              type="text"
+              value={upiId}
+              onChange={(event) => setUpiId(event.target.value)}
+              minLength={5}
+              maxLength={50}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="name@bank"
+              aria-describedby="upi-help"
+              className="min-h-11 w-full rounded-lg border border-outline-variant bg-white px-3.5 py-2.5 text-sm text-on-surface focus:border-indigo-400"
+            />
+            <button
+              type="submit"
+              disabled={isSavingUpi}
+              className="min-h-11 shrink-0 rounded-lg bg-primary-container px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSavingUpi ? 'Saving…' : profile.upiId ? 'Update UPI ID' : 'Save UPI ID'}
+            </button>
+          </div>
+          <p id="upi-help" className="mt-2 text-xs leading-5 text-secondary">
+            This is private and visible only to you and authorized payout administrators. Updating it also fills any prize payout still waiting for your UPI details; a transfer already in progress keeps its existing destination.
+          </p>
+        </form>
       </section>
 
       <section className="rounded-2xl border border-outline-variant bg-white p-6 shadow-sm md:p-8">

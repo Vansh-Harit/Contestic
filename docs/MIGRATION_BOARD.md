@@ -61,6 +61,8 @@ Execute one unchecked item at a time. Link new evidence back to `docs/ISSUE_REGI
 - [ ] M-32 Verify C-42 after deployment: a controlled submission-open transition must queue and send its emails in the same cron invocation, the total route duration must remain under 55 seconds, and no `processing` outbox row may remain locked for more than 10 minutes. Confirm the existing stale rows are recovered once without duplicate provider deliveries.
 - [ ] M-33 JFIF creator-review preview passed through user testing on 2026-08-21. Still verify one disposable `.svg` submission shows a thumbnail and opens in the existing lightbox, while an unrelated user remains unable to access either signed file URL.
 - [ ] M-34 Verify C-44 on desktop by moving/clicking over the Browse hero while navigating repeatedly between Browse and Login. No DotGrid null-reference error should appear in the browser or dev-server log.
+- [ ] M-35 Verify C-45 from My Profile: save and then update a valid UPI ID, refresh and confirm it persists, confirm an invalid value is rejected, and confirm another user's public profile never displays the UPI ID. If a controlled payout is `awaiting_upi`, confirm saving moves that payout to `pending_transfer`; do not alter a real transfer in progress.
+- [ ] M-36 Verify C-46 on desktop and mobile: the footer mail icon must open a Gmail compose addressed to `contestic.support@gmail.com`, without navigating the Contestic tab away from the site.
 
 ## Launch
 
