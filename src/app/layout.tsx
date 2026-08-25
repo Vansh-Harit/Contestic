@@ -17,9 +17,27 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Contestic — Creative Contest Marketplace',
+  metadataBase: new URL('https://contestic.in'),
+  title: {
+    default: 'Contestic — Skill-Based Creative Contest Platform',
+    template: '%s | Contestic',
+  },
   description:
-    'Host and participate in creative contests for scripts, naming, copywriting, and design. Win real prizes.',
+    'A skill-based creative contest platform for hosting briefs, receiving original submissions and awarding fixed prizes for design, writing, naming and video work.',
+  keywords: ['creative contests', 'design contests', 'writing contests', 'skill-based contests', 'Contestic'],
+  openGraph: {
+    type: 'website',
+    locale: 'en_IN',
+    url: '/',
+    siteName: 'Contestic',
+    title: 'Contestic — Skill-Based Creative Contest Platform',
+    description: 'Host a creative brief, review original submissions and award a fixed prize to the selected winner.',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Contestic — Skill-Based Creative Contest Platform',
+    description: 'Host creative briefs, review original submissions and award fixed prizes.',
+  },
 }
 
 export default function RootLayout({

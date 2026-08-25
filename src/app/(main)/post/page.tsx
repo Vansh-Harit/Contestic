@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { FileText, Tag, Palette, ChevronLeft, Calendar, Clock, X, LayoutGrid, Video, CreditCard, ShieldCheck, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ContestFormData } from '@/lib/types'
@@ -987,6 +988,12 @@ export default function PostContestPage() {
                 </div>
                 <p className="mt-6 rounded-lg border border-indigo-100 bg-white/70 p-3 text-xs leading-5 text-secondary">
                   The platform fee covers platform operations, secure payment processing, and contest administration. This setup is saved as a draft for up to two days. Once payment is confirmed and the contest is live, it cannot be cancelled.
+                </p>
+                <p className="mt-3 text-xs leading-5 text-secondary">
+                  By continuing to payment, you agree to the{' '}
+                  <Link href="/terms" target="_blank" className="font-medium text-primary hover:underline">Terms and conditions</Link>,{' '}
+                  <Link href="/privacy" target="_blank" className="font-medium text-primary hover:underline">Privacy policy</Link> and{' '}
+                  <Link href="/refund-cancellation" target="_blank" className="font-medium text-primary hover:underline">Refund and cancellation policy</Link>.
                 </p>
               </aside>
             </div>

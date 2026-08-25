@@ -29,8 +29,12 @@ export default function MainLayout({
           <div>
             <h2 className="text-sm font-semibold text-on-surface">Company</h2>
             <div className="mt-3 flex flex-col gap-2 text-sm text-secondary">
+              <Link href="/contact" className="transition-colors hover:text-primary">Contact and operator details</Link>
               <Link href="/terms" className="transition-colors hover:text-primary">Terms and conditions</Link>
               <Link href="/privacy" className="transition-colors hover:text-primary">Privacy policy</Link>
+              <Link href="/refund-cancellation" className="transition-colors hover:text-primary">Refund and cancellation</Link>
+              <Link href="/service-delivery" className="transition-colors hover:text-primary">Service delivery and shipping</Link>
+              <Link href="/grievance" className="transition-colors hover:text-primary">Grievance redressal</Link>
             </div>
           </div>
 

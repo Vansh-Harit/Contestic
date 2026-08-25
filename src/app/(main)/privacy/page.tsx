@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { legalDetails } from '@/lib/legal-details'
 
 const sections = [
   {
@@ -12,6 +13,10 @@ const sections = [
   {
     title: 'How information is used',
     body: 'Information is used to authenticate users, operate contests, enforce entry and submission rules, deliver private briefs, enable creator-participant chat, process payments and payouts, send service emails, prevent abuse, investigate failures and improve platform reliability.',
+  },
+  {
+    title: 'Who operates Contestic',
+    body: `Contestic is operated by ${legalDetails.operatorName} as ${legalDetails.businessDescription} in ${legalDetails.jurisdiction}. You can reach the operator at ${legalDetails.operatorEmail} and support at ${legalDetails.supportEmail}.`,
   },
   {
     title: 'Product analytics',
@@ -31,11 +36,11 @@ const sections = [
   },
   {
     title: 'Your choices',
-    body: 'You can update your public name, profile photo and bio from My Profile. You may contact contestic.support@gmail.com to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.',
+    body: `You can update your public name, profile photo and bio from My Profile. You may contact ${legalDetails.supportEmail} to ask about your personal information, correction or deletion options. Some records may need to be retained for payment reconciliation, fraud prevention, dispute handling or legal obligations.`,
   },
   {
     title: 'Security and changes',
-    body: 'Contestic uses access controls and service-side authorization intended to protect private information, but no online service can guarantee absolute security. This policy may change as the product or applicable requirements evolve. Privacy questions may be sent to contestic.support@gmail.com. The operator identity and governing jurisdiction will be published before Contestic moves from controlled testing to a general public launch.',
+    body: `Contestic uses access controls and service-side authorization intended to protect private information, but no online service can guarantee absolute security. This policy may change as the product or applicable requirements evolve. Privacy questions may be sent to ${legalDetails.supportEmail}. Grievances may be sent to ${legalDetails.grievanceOfficer.email}.`,
   },
 ]
 
@@ -46,7 +51,7 @@ export default function PrivacyPage() {
       <header className="mt-6 border-b border-outline-variant pb-8">
         <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Legal</p>
         <h1 className="mt-2 font-heading text-4xl font-bold text-on-surface">Privacy policy</h1>
-        <p className="mt-3 text-sm text-secondary">Effective 7 August 2026</p>
+        <p className="mt-3 text-sm text-secondary">Effective 25 August 2026</p>
       </header>
       <div className="mt-8 space-y-8">
         {sections.map((section) => (
